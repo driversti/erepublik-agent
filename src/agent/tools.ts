@@ -6,6 +6,7 @@ import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { collectMissionRewards } from '../tools/claim.js';
 import { claimVip } from '../tools/vip.js';
+import { collectObjectiveRewards } from '../tools/objectives.js';
 import type { DailyState } from '../memory/schema.js';
 
 export interface ToolDeps {
@@ -72,6 +73,18 @@ export function buildTools(deps: ToolDeps) {
         const result = await collectMissionRewards(deps.ctx, deps.csrf, deps.state.claimedMissionIds);
         for (const id of result.claimed) {
           if (!deps.state.claimedMissionIds.includes(id)) deps.state.claimedMissionIds.push(id);
+        }
+        return ok(result);
+      },
+    ),
+    tool(
+      'collectObjectiveRewards',
+      'Sweep all unlocked Daily Objective chests (AP thresholds 20/40/60/80/100) and claim them. Call this once per cycle, after collectMissionRewards. Returns { claimed: number[], failed: [...] } where claimed is the list of AP cost thresholds just collected.',
+      z.object({}).shape,
+      async () => {
+        const result = await collectObjectiveRewards(deps.ctx, deps.csrf, deps.state.claimedChestThresholds);
+        for (const cost of result.claimed) {
+          if (!deps.state.claimedChestThresholds.includes(cost)) deps.state.claimedChestThresholds.push(cost);
         }
         return ok(result);
       },

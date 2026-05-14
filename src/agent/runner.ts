@@ -8,6 +8,7 @@ import { loadOrInit, save } from '../memory/dailyState.js';
 import { allSafeDailyDone, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
+import { getObjectiveStatus } from '../tools/objectives.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -31,12 +32,14 @@ Step 1 — For each item in the pending list, call the matching tool exactly onc
 - "train" → call the train tool
 - "vipClaim" → call the vipClaim tool
 
-Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once to sweep up any unclaimed mission rewards.
+Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once.
+
+Step 3 — Then call collectObjectiveRewards exactly once to claim any unlocked AP chests.
 
 Rules:
 - Skip any action NOT in the pending list.
 - One call per item. Do NOT retry on success. Do NOT call the same tool twice.
-- collectMissionRewards is called at most once per cycle, after the actions.
+- collectMissionRewards and collectObjectiveRewards are each called at most once per cycle, in that order, after the actions.
 - After all tools return, reply in <40 words summarising what you did.
 - No emoji. No tables. No invented tools.`;
 }
@@ -59,16 +62,26 @@ try {
     save(state);
   }
 
+  const objectives = await getObjectiveStatus(ctx, csrf);
+  // Reconcile externally-claimed objective chests into memory
+  for (const cost of objectives.claimed) {
+    if (!state.claimedChestThresholds.includes(cost)) state.claimedChestThresholds.push(cost);
+  }
+  console.log(`[cycle] objectives: progress=${objectives.progress}, claimed=[${objectives.claimed.join(', ')}], available=[${objectives.available.join(', ')}]`);
+
   // Only short-circuit if nothing pending AND nothing left to claim.
   const completedMissionIds = missions.missions.filter((m) => m.completed).map((m) => m.id);
-  const unclaimed = completedMissionIds.filter((id) => !state.claimedMissionIds.includes(id));
-  if (allSafeDailyDone(state) && unclaimed.length === 0) {
+  const unclaimedMissions = completedMissionIds.filter((id) => !state.claimedMissionIds.includes(id));
+  const unclaimedObjectives = objectives.available.filter((c) => !state.claimedChestThresholds.includes(c));
+  const shortCircuit =
+    allSafeDailyDone(state) && unclaimedMissions.length === 0 && unclaimedObjectives.length === 0;
+  if (shortCircuit) {
     console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — short-circuit, no LLM call');
-    process.exit(0);
-  }
-
+  } else {
   const pending = pendingActions(state);
-  console.log(`[cycle] pending: [${pending.join(', ')}], unclaimed: [${unclaimed.join(', ')}] → invoking ${env.CLAUDE_MODEL}`);
+  console.log(
+    `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}] → invoking ${env.CLAUDE_MODEL}`,
+  );
 
   const tools = buildTools({ ctx, csrf, state });
   const mcpServer = createSdkMcpServer({ name: 'erepublik-agent-tools', tools });
@@ -100,6 +113,7 @@ try {
       console.log(`  duration_ms: ${msg.duration_ms}, turns: ${msg.num_turns}, cost_usd: ${msg.total_cost_usd}`);
     }
   }
+  } // end else (non-short-circuit branch)
 } finally {
   save(state);
   await ctx.close();

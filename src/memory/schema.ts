@@ -20,6 +20,7 @@ export const DailyState = z.object({
     vipClaim: ActionRecord.optional(),
   }),
   claimedMissionIds: z.array(z.number().int()).default([]),
+  claimedChestThresholds: z.array(z.number().int()).default([]),
   notifiedNoJobToday: z.boolean().default(false),
 });
 
@@ -30,6 +31,7 @@ export function emptyState(day: number): DailyState {
     eRepublikDay: day,
     completedActions: {},
     claimedMissionIds: [],
+    claimedChestThresholds: [],
     notifiedNoJobToday: false,
   };
 }
