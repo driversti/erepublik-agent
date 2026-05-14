@@ -1,0 +1,28 @@
+{
+  "name": "erepublik-agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "bootstrap": "tsx src/bootstrap.ts",
+    "healthcheck": "tsx src/healthcheck.ts",
+    "missions": "tsx src/showMissions.ts",
+    "agent": "tsx src/agent/runner.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
+    "cloakbrowser": "^0.3.28",
+    "dotenv": "^16.4.5",
+    "playwright-core": "^1.49.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
