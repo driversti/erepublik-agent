@@ -4,6 +4,7 @@ import type { BrowserContext } from 'playwright-core';
 import { getMissionState } from '../tools/missions.js';
 import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
+import { collectMissionRewards } from '../tools/claim.js';
 import type { DailyState } from '../memory/schema.js';
 
 export interface ToolDeps {
@@ -46,6 +47,18 @@ export function buildTools(deps: ToolDeps) {
         const result = await train(deps.ctx, deps.csrf);
         if (result.success) {
           deps.state.completedActions.train = { at: now(), source: 'agent' };
+        }
+        return ok(result);
+      },
+    ),
+    tool(
+      'collectMissionRewards',
+      'Sweep all completed daily missions and claim their rewards in one go. Call this AFTER any action tool (work/train) succeeds. Returns { claimed: number[], skipped: number[], failed: [...] }. Safe to call even if nothing is claimable — returns empty arrays.',
+      z.object({}).shape,
+      async () => {
+        const result = await collectMissionRewards(deps.ctx, deps.csrf, deps.state.claimedMissionIds);
+        for (const id of result.claimed) {
+          if (!deps.state.claimedMissionIds.includes(id)) deps.state.claimedMissionIds.push(id);
         }
         return ok(result);
       },

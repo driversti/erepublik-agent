@@ -15,13 +15,19 @@ export interface MissionStateSlim {
   missions: MissionSlim[];
 }
 
+interface RawProgress {
+  current?: number;
+  threshold?: number;
+  completed?: boolean;
+}
+
 interface RawMission {
   id: number;
   title?: string;
   finished_at?: string | null;
   completed?: boolean;
   claimable?: boolean;
-  progress?: { current?: number; threshold?: number } | number;
+  progress?: RawProgress[] | RawProgress | number;
   hints?: Record<string, { requirement?: string }>;
 }
 
@@ -31,15 +37,23 @@ interface RawResponse {
 
 const SAFE_DAILY_IDS = [100001, 100003, 100011];
 
+function firstProgress(m: RawMission): RawProgress | null {
+  if (Array.isArray(m.progress)) return m.progress[0] ?? null;
+  if (m.progress != null && typeof m.progress === 'object') return m.progress;
+  return null;
+}
+
 function slim(m: RawMission): MissionSlim {
-  const current = typeof m.progress === 'object' ? (m.progress?.current ?? 0) : (m.progress ?? 0);
-  const threshold = typeof m.progress === 'object' ? (m.progress?.threshold ?? 1) : 1;
+  const p = firstProgress(m);
+  const current = p?.current ?? 0;
+  const threshold = p?.threshold ?? 1;
+  const completed = p?.completed === true || m.completed === true || m.finished_at != null;
   return {
     id: m.id,
     title: m.title ?? `mission-${m.id}`,
     progress: `${current}/${threshold}`,
-    completed: m.completed === true || m.finished_at != null,
-    claimable: m.claimable === true,
+    completed,
+    claimable: completed && m.claimable !== false,
   };
 }
 

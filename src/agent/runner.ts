@@ -20,19 +20,23 @@ const Env = z.object({
 const env = Env.parse(process.env);
 process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
 
-function systemPrompt(pending: string[]): string {
+function systemPrompt(pending: string[], claimedIds: number[]): string {
   return `You are erepublik-agent.
 
 Today's pending safe-daily actions: [${pending.join(', ')}].
+Already-claimed mission IDs: [${claimedIds.join(', ') || 'none'}].
 
-For each item in that list, call the matching tool exactly once:
+Step 1 — For each item in the pending list, call the matching tool exactly once:
 - "work" → call the work tool
 - "train" → call the train tool
+
+Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once to sweep up any unclaimed mission rewards.
 
 Rules:
 - Skip any action NOT in the pending list.
 - One call per item. Do NOT retry on success. Do NOT call the same tool twice.
-- After all tools have returned, reply in <40 words summarising what you did.
+- collectMissionRewards is called at most once per cycle, after the actions.
+- After all tools return, reply in <40 words summarising what you did.
 - No emoji. No tables. No invented tools.`;
 }
 
@@ -54,13 +58,16 @@ try {
     save(state);
   }
 
-  if (allSafeDailyDone(state)) {
-    console.log('[cycle] ✅ all safe-daily flags set — short-circuit, no LLM call');
+  // Only short-circuit if nothing pending AND nothing left to claim.
+  const completedMissionIds = missions.missions.filter((m) => m.completed).map((m) => m.id);
+  const unclaimed = completedMissionIds.filter((id) => !state.claimedMissionIds.includes(id));
+  if (allSafeDailyDone(state) && unclaimed.length === 0) {
+    console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — short-circuit, no LLM call');
     process.exit(0);
   }
 
   const pending = pendingActions(state);
-  console.log(`[cycle] pending: [${pending.join(', ')}] → invoking ${env.CLAUDE_MODEL}`);
+  console.log(`[cycle] pending: [${pending.join(', ')}], unclaimed: [${unclaimed.join(', ')}] → invoking ${env.CLAUDE_MODEL}`);
 
   const tools = buildTools({ ctx, csrf, state });
   const mcpServer = createSdkMcpServer({ name: 'erepublik-agent-tools', tools });
@@ -68,7 +75,7 @@ try {
   const stream = query({
     prompt: 'Run the cycle now.',
     options: {
-      systemPrompt: systemPrompt(pending),
+      systemPrompt: systemPrompt(pending, state.claimedMissionIds),
       model: env.CLAUDE_MODEL,
       maxTurns: env.MAX_AGENT_ITERATIONS,
       tools: [],
