@@ -10,7 +10,8 @@
     "bootstrap": "tsx src/bootstrap.ts",
     "healthcheck": "tsx src/healthcheck.ts",
     "missions": "tsx src/showMissions.ts",
-    "agent": "tsx src/agent/runner.ts",
+    "start": "tsx src/agent/runner.ts",
+    "agent": "tsx src/agent/runner.ts -- --once",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

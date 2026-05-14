@@ -22,6 +22,7 @@ export const DailyState = z.object({
   claimedMissionIds: z.array(z.number().int()).default([]),
   claimedChestThresholds: z.array(z.number().int()).default([]),
   notifiedNoJobToday: z.boolean().default(false),
+  lastDigestHash: z.string().nullable().default(null),
 });
 
 export type DailyState = z.infer<typeof DailyState>;
@@ -33,6 +34,7 @@ export function emptyState(day: number): DailyState {
     claimedMissionIds: [],
     claimedChestThresholds: [],
     notifiedNoJobToday: false,
+    lastDigestHash: null,
   };
 }
 
