@@ -29,6 +29,7 @@ Already-claimed mission IDs: [${claimedIds.join(', ') || 'none'}].
 Step 1 — For each item in the pending list, call the matching tool exactly once:
 - "work" → call the work tool
 - "train" → call the train tool
+- "vipClaim" → call the vipClaim tool
 
 Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once to sweep up any unclaimed mission rewards.
 

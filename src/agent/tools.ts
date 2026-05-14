@@ -5,6 +5,7 @@ import { getMissionState } from '../tools/missions.js';
 import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { collectMissionRewards } from '../tools/claim.js';
+import { claimVip } from '../tools/vip.js';
 import type { DailyState } from '../memory/schema.js';
 
 export interface ToolDeps {
@@ -47,6 +48,18 @@ export function buildTools(deps: ToolDeps) {
         const result = await train(deps.ctx, deps.csrf);
         if (result.success) {
           deps.state.completedActions.train = { at: now(), source: 'agent' };
+        }
+        return ok(result);
+      },
+    ),
+    tool(
+      'vipClaim',
+      'Claim the daily VIP gift (POST /en/main/vip-claim). Idempotent — calling twice returns the same already-claimed result. One use per eRepublik day.',
+      z.object({}).shape,
+      async () => {
+        const result = await claimVip(deps.ctx, deps.csrf);
+        if (result.success) {
+          deps.state.completedActions.vipClaim = { at: now(), source: 'agent' };
         }
         return ok(result);
       },
