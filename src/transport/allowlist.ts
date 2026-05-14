@@ -20,6 +20,8 @@ const PHASE_1_ALLOWLIST: readonly AllowEntry[] = [
   { method: 'POST', path: '/en/main/vip-claim' },
   { method: 'POST', path: '/en/main/mission-solve' },
   { method: 'POST', path: '/en/main/objective-claim-reward' },
+  { method: 'GET', path: '/en/main/weekly-challenge-data' },
+  { method: 'POST', path: '/en/main/weekly-challenge-collect-all' },
 ];
 
 export function isAllowed(method: HttpMethod, path: string): boolean {

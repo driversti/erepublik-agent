@@ -9,6 +9,8 @@ import { allSafeDailyDone, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
 import { getObjectiveStatus } from '../tools/objectives.js';
+import { getWeeklyChallenge } from '../tools/weekly.js';
+import { loadWeekly, saveWeekly } from '../memory/weeklyState.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -36,16 +38,19 @@ Step 2 — After ALL action tools have returned (even if pending was empty), cal
 
 Step 3 — Then call collectObjectiveRewards exactly once to claim any unlocked AP chests.
 
+Step 4 — Then call collectWeeklyChallengeRewards exactly once to claim any new weekly tiers.
+
 Rules:
 - Skip any action NOT in the pending list.
 - One call per item. Do NOT retry on success. Do NOT call the same tool twice.
-- collectMissionRewards and collectObjectiveRewards are each called at most once per cycle, in that order, after the actions.
+- collectMissionRewards, collectObjectiveRewards, and collectWeeklyChallengeRewards are each called at most once per cycle, in that order, after the actions.
 - After all tools return, reply in <40 words summarising what you did.
 - No emoji. No tables. No invented tools.`;
 }
 
 const day = eRepublikDay();
 const { state, rolledOver } = loadOrInit(day);
+const weekly = loadWeekly();
 console.log(`[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}`);
 
 const ctx = await openSession({ accountSlug: env.ERP_ACCOUNT_SLUG, headed: env.HEADED === 'true' });
@@ -69,12 +74,29 @@ try {
   }
   console.log(`[cycle] objectives: progress=${objectives.progress}, claimed=[${objectives.claimed.join(', ')}], available=[${objectives.available.join(', ')}]`);
 
+  const weeklyStatus = await getWeeklyChallenge(ctx, csrf);
+  // Weekly reset detection: completed max dropped below remembered max.
+  if (
+    weeklyStatus.maxCompleted != null &&
+    weekly.lastClaimedRewardId != null &&
+    weeklyStatus.maxCompleted < weekly.lastClaimedRewardId
+  ) {
+    console.log(`[cycle] weekly: reset detected (api=${weeklyStatus.maxCompleted} < memory=${weekly.lastClaimedRewardId})`);
+    weekly.lastClaimedRewardId = null;
+  }
+  const weeklyUnclaimed =
+    weeklyStatus.maxCompleted != null && weeklyStatus.maxCompleted > (weekly.lastClaimedRewardId ?? 0);
+  console.log(`[cycle] weekly: maxCompleted=${weeklyStatus.maxCompleted ?? 'none'}, lastClaimed=${weekly.lastClaimedRewardId ?? 'none'}, unclaimed=${weeklyUnclaimed}`);
+
   // Only short-circuit if nothing pending AND nothing left to claim.
   const completedMissionIds = missions.missions.filter((m) => m.completed).map((m) => m.id);
   const unclaimedMissions = completedMissionIds.filter((id) => !state.claimedMissionIds.includes(id));
   const unclaimedObjectives = objectives.available.filter((c) => !state.claimedChestThresholds.includes(c));
   const shortCircuit =
-    allSafeDailyDone(state) && unclaimedMissions.length === 0 && unclaimedObjectives.length === 0;
+    allSafeDailyDone(state) &&
+    unclaimedMissions.length === 0 &&
+    unclaimedObjectives.length === 0 &&
+    !weeklyUnclaimed;
   if (shortCircuit) {
     console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — short-circuit, no LLM call');
   } else {
@@ -83,7 +105,7 @@ try {
     `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}] → invoking ${env.CLAUDE_MODEL}`,
   );
 
-  const tools = buildTools({ ctx, csrf, state });
+  const tools = buildTools({ ctx, csrf, state, weekly });
   const mcpServer = createSdkMcpServer({ name: 'erepublik-agent-tools', tools });
 
   const stream = query({
@@ -116,5 +138,6 @@ try {
   } // end else (non-short-circuit branch)
 } finally {
   save(state);
+  saveWeekly(weekly);
   await ctx.close();
 }

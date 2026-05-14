@@ -7,12 +7,15 @@ import { train } from '../tools/train.js';
 import { collectMissionRewards } from '../tools/claim.js';
 import { claimVip } from '../tools/vip.js';
 import { collectObjectiveRewards } from '../tools/objectives.js';
+import { collectWeeklyChallenge } from '../tools/weekly.js';
 import type { DailyState } from '../memory/schema.js';
+import type { WeeklyState } from '../memory/weeklyState.js';
 
 export interface ToolDeps {
   ctx: BrowserContext;
   csrf: string;
   state: DailyState;
+  weekly: WeeklyState;
 }
 
 const ok = (value: unknown) => ({
@@ -73,6 +76,18 @@ export function buildTools(deps: ToolDeps) {
         const result = await collectMissionRewards(deps.ctx, deps.csrf, deps.state.claimedMissionIds);
         for (const id of result.claimed) {
           if (!deps.state.claimedMissionIds.includes(id)) deps.state.claimedMissionIds.push(id);
+        }
+        return ok(result);
+      },
+    ),
+    tool(
+      'collectWeeklyChallengeRewards',
+      'Sweep the Weekly Challenge: if any reward tier has been completed past the last-claimed one, claim everything up to the new max. Returns { claimed, maxRewardId, reason? }. Idempotent — calling repeatedly does nothing once up to date.',
+      z.object({}).shape,
+      async () => {
+        const result = await collectWeeklyChallenge(deps.ctx, deps.csrf, deps.weekly.lastClaimedRewardId);
+        if (result.claimed && result.maxRewardId != null) {
+          deps.weekly.lastClaimedRewardId = result.maxRewardId;
         }
         return ok(result);
       },
