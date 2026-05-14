@@ -19,6 +19,17 @@ export async function openSession(opts: SessionOptions): Promise<BrowserContext>
 }
 
 export async function extractCsrf(ctx: BrowserContext): Promise<string> {
+  const { csrf } = await extractCitizenContext(ctx);
+  return csrf;
+}
+
+export interface CitizenContext {
+  csrf: string;
+  countryId: number | null;
+  citizenId: number | null;
+}
+
+export async function extractCitizenContext(ctx: BrowserContext): Promise<CitizenContext> {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   if (!page.url().startsWith('https://www.erepublik.com/en')) {
     await page.goto('https://www.erepublik.com/en', { waitUntil: 'domcontentloaded' });
@@ -26,11 +37,38 @@ export async function extractCsrf(ctx: BrowserContext): Promise<string> {
   if (page.url().includes('/login')) {
     throw new Error('Session expired — re-run bootstrap');
   }
-  const csrf = await page.evaluate(() => {
-    const meta = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    const fromGlobal = (globalThis as unknown as { SERVER_DATA?: { csrfToken?: string } }).SERVER_DATA?.csrfToken;
-    return meta ?? fromGlobal ?? null;
+
+  const info = await page.evaluate(() => {
+    type SD = { csrfToken?: string };
+    type Citizen = {
+      citizenshipCountryId?: number;
+      ctCountryId?: number;
+      citizenship?: { id?: number };
+      country?: { id?: number };
+      citizenId?: number;
+      id?: number;
+    };
+    const sd = (globalThis as unknown as { SERVER_DATA?: SD }).SERVER_DATA;
+    const erp = (globalThis as unknown as { erepublik?: { citizen?: Citizen } }).erepublik;
+    const c = erp?.citizen;
+
+    const csrf =
+      document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ??
+      sd?.csrfToken ??
+      null;
+
+    const countryId =
+      c?.citizenshipCountryId ??
+      c?.ctCountryId ??
+      c?.citizenship?.id ??
+      c?.country?.id ??
+      null;
+
+    const citizenId = c?.citizenId ?? c?.id ?? null;
+
+    return { csrf, countryId, citizenId };
   });
-  if (!csrf) throw new Error('CSRF token not found on /en');
-  return csrf;
+
+  if (!info.csrf) throw new Error('CSRF token not found on /en');
+  return { csrf: info.csrf, countryId: info.countryId ?? null, citizenId: info.citizenId ?? null };
 }

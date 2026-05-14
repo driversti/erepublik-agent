@@ -8,6 +8,7 @@ import { collectMissionRewards } from '../tools/claim.js';
 import { claimVip } from '../tools/vip.js';
 import { collectObjectiveRewards } from '../tools/objectives.js';
 import { collectWeeklyChallenge } from '../tools/weekly.js';
+import { buyOneCheapestFood } from '../tools/market.js';
 import type { DailyState } from '../memory/schema.js';
 import type { WeeklyState } from '../memory/weeklyState.js';
 
@@ -16,6 +17,8 @@ export interface ToolDeps {
   csrf: string;
   state: DailyState;
   weekly: WeeklyState;
+  countryId: number;
+  maxFoodPrice: number;
 }
 
 const ok = (value: unknown) => ({
@@ -52,6 +55,22 @@ export function buildTools(deps: ToolDeps) {
         const result = await train(deps.ctx, deps.csrf);
         if (result.success) {
           deps.state.completedActions.train = { at: now(), source: 'agent' };
+        }
+        return ok(result);
+      },
+    ),
+    tool(
+      'buyFood',
+      'Buy 1 unit of the cheapest Q1 food on your home-country marketplace (mission 100011). Hardcoded: industry=FOOD, quality=1, amount=1. Refuses to buy if the cheapest offer exceeds the configured max-price ceiling (returns reason="price_above_ceiling"). Returns { success, offerId, price, reason? }.',
+      z.object({}).shape,
+      async () => {
+        const result = await buyOneCheapestFood(deps.ctx, deps.csrf, deps.countryId, deps.maxFoodPrice);
+        if (result.success && result.offerId != null) {
+          deps.state.completedActions.buyFood = {
+            at: now(),
+            source: 'agent',
+            offerId: result.offerId,
+          };
         }
         return ok(result);
       },

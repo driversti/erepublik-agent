@@ -7,6 +7,9 @@ const SAFE_DAILY_MAP: Record<number, keyof DailyState['completedActions']> = {
   100011: 'buyFood',
 };
 
+// VIP claim is not exposed via daily-missions-data; reconcile is a no-op for it.
+// (kept in sync via the tool's own idempotent calls)
+
 /**
  * Reconcile API mission state into local memory. If a safe-daily mission
  * is reported as completed by the API but the local flag is unset, mark it

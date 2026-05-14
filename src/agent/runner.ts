@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BrowserContext } from 'playwright-core';
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
-import { openSession, extractCsrf } from '../browser/session.js';
+import { openSession, extractCitizenContext } from '../browser/session.js';
 import { buildTools } from './tools.js';
 import { eRepublikDay } from '../erepublik/day.js';
 import { loadOrInit, save } from '../memory/dailyState.js';
@@ -17,6 +17,8 @@ import { TelegramNotifier } from '../telegram/notifier.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
+  ERP_COUNTRY_ID: z.coerce.number().int().positive().optional(),
+  ERP_MAX_FOOD_PRICE: z.coerce.number().positive(),
   HEADED: z.enum(['true', 'false']).default('false'),
   ANTHROPIC_API_KEY: z.string().min(1),
   CLAUDE_MODEL: z.string().default('claude-haiku-4-5'),
@@ -43,6 +45,7 @@ Step 1 — For each item in the pending list, call the matching tool exactly onc
 - "work" → call the work tool
 - "train" → call the train tool
 - "vipClaim" → call the vipClaim tool
+- "buyFood" → call the buyFood tool
 
 Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once.
 
@@ -68,7 +71,7 @@ function formatDigest(day: number, state: DailyState, weekly: WeeklyState): stri
   const flag = (v: unknown) => (v ? '✅' : '⏳');
   return [
     `*erepublik-agent* — day ${day}`,
-    `Work ${flag(a.work)}  Train ${flag(a.train)}  VIP ${flag(a.vipClaim)}`,
+    `Work ${flag(a.work)}  Train ${flag(a.train)}  VIP ${flag(a.vipClaim)}  Food ${flag(a.buyFood)}`,
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
@@ -84,7 +87,13 @@ async function runCycle(
   const weekly = loadWeekly();
   console.log(`[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}`);
 
-  const csrf = await extractCsrf(ctx);
+  const ctxInfo = await extractCitizenContext(ctx);
+  const { csrf } = ctxInfo;
+  const countryId = ctxInfo.countryId ?? env.ERP_COUNTRY_ID ?? null;
+  if (countryId == null) {
+    throw new Error('countryId not found in browser context and ERP_COUNTRY_ID env not set');
+  }
+  console.log(`[cycle] citizen: id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}`);
 
   const missions = await getMissionState(ctx, csrf);
   console.log(`[cycle] api: ${missions.total} missions, pendingSafeDaily=[${missions.pendingSafeDaily.join(', ')}]`);
@@ -129,7 +138,14 @@ async function runCycle(
         `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}] → invoking ${env.CLAUDE_MODEL}`,
       );
 
-      const tools = buildTools({ ctx, csrf, state, weekly });
+      const tools = buildTools({
+        ctx,
+        csrf,
+        state,
+        weekly,
+        countryId,
+        maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
+      });
       const mcpServer = createSdkMcpServer({ name: 'erepublik-agent-tools', tools });
 
       const stream = query({

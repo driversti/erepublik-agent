@@ -39,7 +39,7 @@ export function emptyState(day: number): DailyState {
 }
 
 /** Safe-daily keys currently in scope (i.e. we have tools that perform them). */
-export const ACTIVE_SAFE_DAILY_KEYS = ['work', 'train', 'vipClaim'] as const;
+export const ACTIVE_SAFE_DAILY_KEYS = ['work', 'train', 'vipClaim', 'buyFood'] as const;
 export type ActiveSafeDailyKey = (typeof ACTIVE_SAFE_DAILY_KEYS)[number];
 
 export function pendingActions(s: DailyState): ActiveSafeDailyKey[] {
