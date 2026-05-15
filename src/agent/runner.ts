@@ -51,8 +51,10 @@ const ONCE = args.has('--once');
 
 function snapshotHash(state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
   const { lastDigestHash: _ignored, ...stateForHash } = state;
-  // nextEligibleAt jitters every session and is not user-visible info → exclude from hash.
-  const { nextEligibleAt: _ignored2, ...fuelForHash } = fuel;
+  // nextEligibleAt jitters every session and cyclesSkipped increments every
+  // idle tick — both are diagnostics, not user-actionable state, so exclude
+  // them from the hash to avoid spamming Telegram every 10 minutes.
+  const { nextEligibleAt: _ignored2, cyclesSkipped: _ignored3, ...fuelForHash } = fuel;
   const data = JSON.stringify({ state: stateForHash, weekly, fuel: fuelForHash });
   return createHash('sha256').update(data).digest('hex').slice(0, 12);
 }
