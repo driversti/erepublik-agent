@@ -23,6 +23,10 @@ export const DailyState = z.object({
   claimedChestThresholds: z.array(z.number().int()).default([]),
   notifiedNoJobToday: z.boolean().default(false),
   lastDigestHash: z.string().nullable().default(null),
+  // ISO timestamp of when we first observed the citizen outside their residence
+  // region this day. Cleared when we observe a home location (manually or after
+  // travelHome). Used by the return-home timer (mirrors ePlus startTimeAbroad).
+  awaySince: z.string().nullable().default(null),
 });
 
 export type DailyState = z.infer<typeof DailyState>;
@@ -35,6 +39,7 @@ export function emptyState(day: number): DailyState {
     claimedChestThresholds: [],
     notifiedNoJobToday: false,
     lastDigestHash: null,
+    awaySince: null,
   };
 }
 

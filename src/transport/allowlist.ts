@@ -26,6 +26,7 @@ const PHASE_1_ALLOWLIST: readonly AllowEntry[] = [
   { method: 'GET', path: '/en/military/campaignsJson/citizen' },
   { method: 'GET', path: '/en/military/battle-stats/' },
   { method: 'POST', path: '/en/main/travelData' },
+  { method: 'POST', path: '/en/main/travel' },
   { method: 'POST', path: '/en/main/battlefieldTravel' },
   { method: 'POST', path: '/en/military/fightDeploy-getInventory' },
   { method: 'POST', path: '/en/military/fightDeploy-startDeploy' },

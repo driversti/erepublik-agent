@@ -21,6 +21,7 @@ import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelSt
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { runFarmSession } from '../farm/session.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
+import { travelHome } from '../tools/travel.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -33,6 +34,13 @@ const Env = z.object({
   ERP_CAPTCHA_PROVIDER: z.enum(['none', '2captcha']).default('none'),
   ERP_CAPTCHA_API_KEY: z.string().optional(),
   ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  // Auto return-home (ePlus returnHome parity). Travels back to residence
+  // once we've been observed outside it for at least N minutes (default 15,
+  // matching ePlus). 0 disables the feature.
+  ERP_RETURN_HOME_AFTER_MINUTES: z.coerce.number().int().min(0).default(15),
+  // Hard ceiling on the residence-trip cost (local CC). Travel is skipped +
+  // alerted when the pre-check returns a higher cost.
+  ERP_RETURN_HOME_MAX_CC: z.coerce.number().int().positive().default(500),
 });
 type Env = z.infer<typeof Env>;
 
@@ -137,8 +145,25 @@ async function runCycle(
     `[cycle] citizen: id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}` +
       `, div=${ctxInfo.division ?? '?'}, level=${ctxInfo.userLevel ?? '?'}` +
       `, energy=${ctxInfo.energy ?? '?'}/${ctxInfo.energyPoolLimit ?? '?'}` +
-      `, fuel=${ctxInfo.fuelLeft ?? '?'}/${ctxInfo.maxFuel ?? '?'}`,
+      `, fuel=${ctxInfo.fuelLeft ?? '?'}/${ctxInfo.maxFuel ?? '?'}` +
+      `, loc=${ctxInfo.currentRegionId ?? '?'}/${ctxInfo.residenceRegionId ?? '?'} (curr/home)`,
   );
+
+  // Track time-away-from-home (mirrors ePlus' startTimeAbroad). Update the
+  // timer based on observed location every cycle; the return-home trip is
+  // triggered later in the idle branch, so we don't waste it before a farm.
+  if (ctxInfo.currentRegionId != null && ctxInfo.residenceRegionId != null) {
+    if (ctxInfo.currentRegionId === ctxInfo.residenceRegionId) {
+      if (state.awaySince != null) console.log('[cycle] at home — clearing awaySince');
+      state.awaySince = null;
+    } else if (state.awaySince == null) {
+      state.awaySince = new Date().toISOString();
+      console.log(`[cycle] abroad detected — awaySince=${state.awaySince}`);
+    } else {
+      const minutes = Math.round((Date.now() - new Date(state.awaySince).getTime()) / 60_000);
+      console.log(`[cycle] still abroad: ${minutes}m since ${state.awaySince}`);
+    }
+  }
 
   const missions = await getMissionState(ctx, csrf);
   console.log(`[cycle] api: ${missions.total} missions, pendingSafeDaily=[${missions.pendingSafeDaily.join(', ')}]`);
@@ -282,6 +307,47 @@ async function runCycle(
       }
     } else if (!decision.shouldFarm) {
       fuel.cyclesSkipped++;
+
+      // Idle cycle — good moment to head home if we've been abroad past the
+      // threshold. Skipping when shouldFarm=true avoids paying for a round-trip
+      // we'd immediately undo with the next farm session.
+      if (
+        env.ERP_RETURN_HOME_AFTER_MINUTES > 0 &&
+        state.awaySince != null &&
+        ctxInfo.residenceRegionId != null
+      ) {
+        const elapsedMin = (Date.now() - new Date(state.awaySince).getTime()) / 60_000;
+        if (elapsedMin >= env.ERP_RETURN_HOME_AFTER_MINUTES) {
+          const residenceCountryIdForHome = ctxInfo.residenceCountryId ?? countryId;
+          try {
+            const r = await travelHome(
+              ctx,
+              csrf,
+              ctxInfo.residenceRegionId,
+              residenceCountryIdForHome,
+              { maxCostCC: env.ERP_RETURN_HOME_MAX_CC },
+            );
+            if (r.success) {
+              state.awaySince = null;
+              const costStr = r.costCC != null ? `${r.costCC}cc` : '?cc';
+              console.log(
+                `[cycle] returned home after ${elapsedMin.toFixed(0)}m abroad (cost=${costStr})`,
+              );
+              await notifier.send(
+                `🏠 returned home after ${elapsedMin.toFixed(0)}m abroad (cost=${costStr})`,
+              );
+            } else if (!r.attempted) {
+              console.log(`[cycle] return-home skipped: ${r.message}`);
+              await notifier.send(`⚠️ return-home skipped: ${r.message}`);
+            } else {
+              console.log(`[cycle] return-home failed: ${r.message}`);
+              await notifier.send(`❌ return-home failed: ${r.message}`);
+            }
+          } catch (err) {
+            console.error(`[cycle] travelHome threw: ${(err as Error).message}`);
+          }
+        }
+      }
     } else {
       console.log(
         `[cycle] farm gate said yes but citizen context incomplete ` +

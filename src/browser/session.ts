@@ -37,6 +37,12 @@ export interface CitizenContext {
   division: number | null;
   residenceRegionId: number | null;
   residenceCountryId: number | null;
+  // Current physical location of the citizen (where battlefieldTravel / travel
+  // last left them). Different from `residenceRegionId` when abroad. Read from
+  // `erepublik.citizen.regionLocationId` / `countryLocationId` — the same
+  // fields ePlus' returnHome plugin uses.
+  currentRegionId: number | null;
+  currentCountryId: number | null;
   // Live state (populated when `refresh: true`; nullable for legacy callers
   // that don't force a reload).
   energy: number | null;
@@ -95,6 +101,8 @@ export async function extractCitizenContext(
       id?: number;
       division?: number;
       residence?: { regionId?: number; countryId?: number };
+      regionLocationId?: number;
+      countryLocationId?: number;
       energy?: number;
       energyPoolLimit?: number;
       recoverableEnergy?: number;
@@ -125,6 +133,8 @@ export async function extractCitizenContext(
     const residenceRegionId = typeof c?.residence?.regionId === 'number' ? c.residence.regionId : null;
     const residenceCountryId =
       typeof c?.residence?.countryId === 'number' ? c.residence.countryId : null;
+    const currentRegionId = typeof c?.regionLocationId === 'number' ? c.regionLocationId : null;
+    const currentCountryId = typeof c?.countryLocationId === 'number' ? c.countryLocationId : null;
 
     const energy = typeof c?.energy === 'number' ? c.energy : null;
     const energyPoolLimit = typeof c?.energyPoolLimit === 'number' ? c.energyPoolLimit : null;
@@ -176,6 +186,8 @@ export async function extractCitizenContext(
       division,
       residenceRegionId,
       residenceCountryId,
+      currentRegionId,
+      currentCountryId,
       energy,
       energyPoolLimit,
       recoverableEnergy,
@@ -197,6 +209,8 @@ export async function extractCitizenContext(
     division: info.division ?? null,
     residenceRegionId: info.residenceRegionId ?? null,
     residenceCountryId: info.residenceCountryId ?? null,
+    currentRegionId: info.currentRegionId ?? null,
+    currentCountryId: info.currentCountryId ?? null,
     energy: info.energy ?? null,
     energyPoolLimit: info.energyPoolLimit ?? null,
     recoverableEnergy: info.recoverableEnergy ?? null,

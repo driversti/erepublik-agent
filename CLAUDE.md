@@ -101,6 +101,17 @@ If detected but unsolved (provider=`none`, no API key, or all attempts failed), 
 
 Configuration (env vars): `ERP_CAPTCHA_PROVIDER` (`none` default | `2captcha`), `ERP_CAPTCHA_API_KEY`, `ERP_CAPTCHA_MAX_ATTEMPTS` (default 3). The captcha submission goes through eRepublik's in-page JS (not our `apiCall`), so no `allowlist.ts` entry is required.
 
+### Auto return-home (`src/tools/travel.ts`)
+
+After a farm session the citizen is stranded in some foreign region, losing the residence energy bonus. The agent mirrors ePlus' `returnHome` plugin: track time-since-leaving in `DailyState.awaySince`, travel back once the threshold expires.
+
+1. **Observe** — `extractCitizenContext` reads `erepublik.citizen.regionLocationId` / `countryLocationId` (same fields ePlus uses) into `ctxInfo.currentRegionId`. At the start of every cycle `runCycle` compares `currentRegionId` to `residenceRegionId`: clears `awaySince` when home, sets it to `now` when first observed abroad.
+2. **Defer past the farm gate** — the return trip only fires in the `!decision.shouldFarm` branch (idle cycles). If the gate says "farm" we'd be moving again anyway, so the round-trip would be wasted.
+3. **Pre-check cost** — `travelHome` first calls `/main/travelData` and reads `regions[residenceRegionId].cost`. Travel home is **NOT free** — it scales with distance just like any other trip. If cost > `ERP_RETURN_HOME_MAX_CC`, the trip is skipped and Telegram is alerted.
+4. **Execute** — POST `/en/main/travel` with `check=moveAction&travelMethod=preferCurrency&inRegionId=…&toCountryId=…`. On success, `awaySince` is cleared and the digest reflects the new state.
+
+Configuration (env vars): `ERP_RETURN_HOME_AFTER_MINUTES` (default 15, matches ePlus; 0 disables), `ERP_RETURN_HOME_MAX_CC` (default 500). The endpoint `/en/main/travel` is in `allowlist.ts`.
+
 When extending the **daily runner**: add the endpoint to `allowlist.ts`, add the implementation in `tools/*.ts` (pure function, no memory writes), then wire it into `runner.ts` — either as a new `runAction` branch (with memory mutation on success) or as a new sweep call. When extending the **farming pipeline**: only `allowlist.ts` + `tools/farm.ts` / `tools/battles.ts` need changes.
 
 ## Conventions specific to this codebase
