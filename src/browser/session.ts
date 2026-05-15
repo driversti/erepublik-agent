@@ -23,6 +23,13 @@ export async function extractCsrf(ctx: BrowserContext): Promise<string> {
   return csrf;
 }
 
+export interface DailyOrder {
+  battleId: number;
+  sideCountryId: number;
+  regionId: number;
+  title: string;
+}
+
 export interface CitizenContext {
   csrf: string;
   countryId: number | null;
@@ -30,12 +37,42 @@ export interface CitizenContext {
   division: number | null;
   residenceRegionId: number | null;
   residenceCountryId: number | null;
+  // Live state (populated when `refresh: true`; nullable for legacy callers
+  // that don't force a reload).
+  energy: number | null;
+  energyPoolLimit: number | null;
+  recoverableEnergy: number | null;
+  energyPerInterval: number | null;
+  hasFoodInInventory: boolean | null;
+  userLevel: number | null;
+  canWorkTrainAgainIn: number | null;
+  dailyOrders: DailyOrder[] | null;
+  fuelLeft: number | null;
+  maxFuel: number | null;
 }
 
-export async function extractCitizenContext(ctx: BrowserContext): Promise<CitizenContext> {
+export interface ExtractOptions {
+  /**
+   * Force a full page navigation before reading globals. Required when the
+   * page has been idle long enough for `erepublik.citizen` to be stale (any
+   * cycle that needs fresh energy/fuel). Lands on /en/military/campaigns,
+   * which also surfaces the only DOM source of `fuelLeft` we have.
+   */
+  refresh?: boolean;
+}
+
+const CAMPAIGNS_URL = 'https://www.erepublik.com/en/military/campaigns';
+const FALLBACK_URL = 'https://www.erepublik.com/en';
+
+export async function extractCitizenContext(
+  ctx: BrowserContext,
+  opts: ExtractOptions = {},
+): Promise<CitizenContext> {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
-  if (!page.url().startsWith('https://www.erepublik.com/en')) {
-    await page.goto('https://www.erepublik.com/en', { waitUntil: 'domcontentloaded' });
+  if (opts.refresh) {
+    await page.goto(CAMPAIGNS_URL, { waitUntil: 'domcontentloaded' });
+  } else if (!page.url().startsWith('https://www.erepublik.com/en')) {
+    await page.goto(FALLBACK_URL, { waitUntil: 'domcontentloaded' });
   }
   if (page.url().includes('/login')) {
     throw new Error('Session expired — re-run bootstrap');
@@ -43,6 +80,12 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
 
   const info = await page.evaluate(() => {
     type SD = { csrfToken?: string };
+    type RawDailyOrder = {
+      battleId?: number;
+      sideCountryId?: number;
+      regionId?: number;
+      title?: string;
+    };
     type Citizen = {
       citizenshipCountryId?: number;
       ctCountryId?: number;
@@ -52,6 +95,14 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
       id?: number;
       division?: number;
       residence?: { regionId?: number; countryId?: number };
+      energy?: number;
+      energyPoolLimit?: number;
+      recoverableEnergy?: number;
+      energyPerInterval?: number;
+      hasFoodInInventory?: boolean;
+      userLevel?: number;
+      canWorkTrainAgainIn?: number;
+      dailyOrders?: RawDailyOrder[];
     };
     const sd = (globalThis as unknown as { SERVER_DATA?: SD }).SERVER_DATA;
     const erp = (globalThis as unknown as { erepublik?: { citizen?: Citizen } }).erepublik;
@@ -75,10 +126,70 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
     const residenceCountryId =
       typeof c?.residence?.countryId === 'number' ? c.residence.countryId : null;
 
-    return { csrf, countryId, citizenId, division, residenceRegionId, residenceCountryId };
+    const energy = typeof c?.energy === 'number' ? c.energy : null;
+    const energyPoolLimit = typeof c?.energyPoolLimit === 'number' ? c.energyPoolLimit : null;
+    const recoverableEnergy = typeof c?.recoverableEnergy === 'number' ? c.recoverableEnergy : null;
+    const energyPerInterval = typeof c?.energyPerInterval === 'number' ? c.energyPerInterval : null;
+    const hasFoodInInventory = typeof c?.hasFoodInInventory === 'boolean' ? c.hasFoodInInventory : null;
+    const userLevel = typeof c?.userLevel === 'number' ? c.userLevel : null;
+    const canWorkTrainAgainIn = typeof c?.canWorkTrainAgainIn === 'number' ? c.canWorkTrainAgainIn : null;
+
+    let dailyOrders: DailyOrder[] | null = null;
+    if (Array.isArray(c?.dailyOrders)) {
+      dailyOrders = [];
+      for (const o of c.dailyOrders) {
+        if (
+          typeof o?.battleId === 'number' &&
+          typeof o.sideCountryId === 'number' &&
+          typeof o.regionId === 'number' &&
+          typeof o.title === 'string'
+        ) {
+          dailyOrders.push({
+            battleId: o.battleId,
+            sideCountryId: o.sideCountryId,
+            regionId: o.regionId,
+            title: o.title,
+          });
+        }
+      }
+    }
+
+    // Fuel only lives in the DOM on /en/military/campaigns. Null when the
+    // current page doesn't have the markers (e.g. refresh=false on /en).
+    let fuelLeft: number | null = null;
+    let maxFuel: number | null = null;
+    const fuelEl = document.querySelector('q#fuelLeft');
+    if (fuelEl) {
+      const n = Number(fuelEl.textContent ?? '');
+      if (Number.isFinite(n)) fuelLeft = n;
+    }
+    const maxEl = document.querySelector('q#maxFuel');
+    if (maxEl) {
+      const n = Number(maxEl.textContent ?? '');
+      if (Number.isFinite(n)) maxFuel = n;
+    }
+
+    return {
+      csrf,
+      countryId,
+      citizenId,
+      division,
+      residenceRegionId,
+      residenceCountryId,
+      energy,
+      energyPoolLimit,
+      recoverableEnergy,
+      energyPerInterval,
+      hasFoodInInventory,
+      userLevel,
+      canWorkTrainAgainIn,
+      dailyOrders,
+      fuelLeft,
+      maxFuel,
+    };
   });
 
-  if (!info.csrf) throw new Error('CSRF token not found on /en');
+  if (!info.csrf) throw new Error('CSRF token not found');
   return {
     csrf: info.csrf,
     countryId: info.countryId ?? null,
@@ -86,5 +197,15 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
     division: info.division ?? null,
     residenceRegionId: info.residenceRegionId ?? null,
     residenceCountryId: info.residenceCountryId ?? null,
+    energy: info.energy ?? null,
+    energyPoolLimit: info.energyPoolLimit ?? null,
+    recoverableEnergy: info.recoverableEnergy ?? null,
+    energyPerInterval: info.energyPerInterval ?? null,
+    hasFoodInInventory: info.hasFoodInInventory ?? null,
+    userLevel: info.userLevel ?? null,
+    canWorkTrainAgainIn: info.canWorkTrainAgainIn ?? null,
+    dailyOrders: info.dailyOrders ?? null,
+    fuelLeft: info.fuelLeft ?? null,
+    maxFuel: info.maxFuel ?? null,
   };
 }

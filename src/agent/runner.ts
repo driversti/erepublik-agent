@@ -17,6 +17,9 @@ import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
 import { collectMissionRewards } from '../tools/claim.js';
+import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
+import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
+import { runFarmSession } from '../farm/session.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -34,13 +37,15 @@ const env = Env.parse(process.env);
 const args = new Set(process.argv.slice(2));
 const ONCE = args.has('--once');
 
-function snapshotHash(state: DailyState, weekly: WeeklyState): string {
+function snapshotHash(state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
   const { lastDigestHash: _ignored, ...stateForHash } = state;
-  const data = JSON.stringify({ state: stateForHash, weekly });
+  // nextEligibleAt jitters every session and is not user-visible info → exclude from hash.
+  const { nextEligibleAt: _ignored2, ...fuelForHash } = fuel;
+  const data = JSON.stringify({ state: stateForHash, weekly, fuel: fuelForHash });
   return createHash('sha256').update(data).digest('hex').slice(0, 12);
 }
 
-function formatDigest(day: number, state: DailyState, weekly: WeeklyState): string {
+function formatDigest(day: number, state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
   const a = state.completedActions;
   const flag = (v: unknown) => (v ? '✅' : '⏳');
   return [
@@ -49,6 +54,7 @@ function formatDigest(day: number, state: DailyState, weekly: WeeklyState): stri
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
+    `Fuel week ${fuel.week}: spent ${fuel.spent}/70, hits ${fuel.hitsLanded}, skipped ${fuel.cyclesSkipped}`,
   ].join('\n');
 }
 
@@ -96,15 +102,26 @@ async function runCycle(
   const day = eRepublikDay();
   const { state, rolledOver } = loadOrInit(day);
   const weekly = loadWeekly();
-  console.log(`[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}`);
+  const { state: fuel, rolledOver: fuelRolled } = loadFuel();
+  console.log(
+    `[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}` +
+      `, fuel-week=${fuel.week}${fuelRolled ? ' (rolled over)' : ''}`,
+  );
 
-  const ctxInfo = await extractCitizenContext(ctx);
+  // refresh: true → page.goto('/en/military/campaigns'), re-populates
+  // erepublik.citizen globals and surfaces fuelLeft in the DOM.
+  const ctxInfo = await extractCitizenContext(ctx, { refresh: true });
   const { csrf } = ctxInfo;
   const countryId = ctxInfo.countryId ?? env.ERP_COUNTRY_ID ?? null;
   if (countryId == null) {
     throw new Error('countryId not found in browser context and ERP_COUNTRY_ID env not set');
   }
-  console.log(`[cycle] citizen: id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}`);
+  console.log(
+    `[cycle] citizen: id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}` +
+      `, div=${ctxInfo.division ?? '?'}, level=${ctxInfo.userLevel ?? '?'}` +
+      `, energy=${ctxInfo.energy ?? '?'}/${ctxInfo.energyPoolLimit ?? '?'}` +
+      `, fuel=${ctxInfo.fuelLeft ?? '?'}/${ctxInfo.maxFuel ?? '?'}`,
+  );
 
   const missions = await getMissionState(ctx, csrf);
   console.log(`[cycle] api: ${missions.total} missions, pendingSafeDaily=[${missions.pendingSafeDaily.join(', ')}]`);
@@ -195,14 +212,74 @@ async function runCycle(
         console.error(`[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`);
       }
     }
+
+    // ── Farm gate ─────────────────────────────────────────────────────────────
+    const fuelAtCycleStart = ctxInfo.fuelLeft ?? 0;
+    const decision = decideFarming({
+      weekly: fuel,
+      poolEnergy: ctxInfo.energy ?? 0,
+      fuelInInventory: fuelAtCycleStart,
+    });
+    console.log(
+      `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
+        `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
+    );
+
+    if (
+      decision.shouldFarm &&
+      ctxInfo.division != null &&
+      ctxInfo.citizenId != null &&
+      ctxInfo.residenceRegionId != null
+    ) {
+      const residenceCountryId = ctxInfo.residenceCountryId ?? countryId;
+      try {
+        const result = await runFarmSession(
+          ctx,
+          {
+            csrf,
+            citizenId: ctxInfo.citizenId,
+            countryId,
+            division: ctxInfo.division,
+            residenceRegionId: ctxInfo.residenceRegionId,
+            residenceCountryId,
+          },
+          { maxBattles: decision.battlesThisSession },
+        );
+        const fuelAfter = result.fuelLeftAtEnd ?? fuelAtCycleStart;
+        const consumed = Math.max(0, fuelAtCycleStart - fuelAfter);
+        fuel.spent += consumed;
+        const verifiedHits = result.wins.reduce(
+          (acc, w) => acc + (w.inv.verified ? 1 : 0) + (w.def.verified ? 1 : 0),
+          0,
+        );
+        fuel.hitsLanded += verifiedHits;
+        fuel.lastFarmedAt = new Date().toISOString();
+        fuel.nextEligibleAt = rollNextEligibleAt();
+        console.log(
+          `[cycle] farm session: stop=${result.stopReason}, wins=${result.wins.length}, ` +
+            `consumed=${consumed} fuel (${fuelAtCycleStart}→${fuelAfter}), hits=${verifiedHits}, ` +
+            `weekly=${fuel.spent}/70`,
+        );
+      } catch (err) {
+        console.error(`[cycle] farm session threw: ${(err as Error).message}`);
+      }
+    } else if (!decision.shouldFarm) {
+      fuel.cyclesSkipped++;
+    } else {
+      console.log(
+        `[cycle] farm gate said yes but citizen context incomplete ` +
+          `(division=${ctxInfo.division}, citizenId=${ctxInfo.citizenId}, residenceRegionId=${ctxInfo.residenceRegionId}) — skipping`,
+      );
+    }
   } finally {
     save(state);
     saveWeekly(weekly);
+    saveFuel(fuel);
   }
 
-  const hash = snapshotHash(state, weekly);
+  const hash = snapshotHash(state, weekly, fuel);
   if (hash !== state.lastDigestHash) {
-    const digest = formatDigest(day, state, weekly);
+    const digest = formatDigest(day, state, weekly, fuel);
     console.log('[cycle] digest:\n' + digest);
     await notifier.send(digest);
     state.lastDigestHash = hash;
