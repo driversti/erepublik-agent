@@ -10,6 +10,11 @@
     "bootstrap": "tsx src/bootstrap.ts",
     "healthcheck": "tsx src/healthcheck.ts",
     "missions": "tsx src/showMissions.ts",
+    "farmable": "tsx src/showFarmableBattles.ts",
+    "farm-one": "tsx src/farmOne.ts",
+    "farmer": "tsx src/farmRunner.ts",
+    "debug-deploy": "tsx src/debugDeploy.ts",
+    "debug-headers": "tsx src/debugHeaders.ts",
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
     "typecheck": "tsc --noEmit"

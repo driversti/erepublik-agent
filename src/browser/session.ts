@@ -27,6 +27,8 @@ export interface CitizenContext {
   csrf: string;
   countryId: number | null;
   citizenId: number | null;
+  division: number | null;
+  residenceRegionId: number | null;
 }
 
 export async function extractCitizenContext(ctx: BrowserContext): Promise<CitizenContext> {
@@ -47,6 +49,8 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
       country?: { id?: number };
       citizenId?: number;
       id?: number;
+      division?: number;
+      residence?: { regionId?: number };
     };
     const sd = (globalThis as unknown as { SERVER_DATA?: SD }).SERVER_DATA;
     const erp = (globalThis as unknown as { erepublik?: { citizen?: Citizen } }).erepublik;
@@ -65,10 +69,18 @@ export async function extractCitizenContext(ctx: BrowserContext): Promise<Citize
       null;
 
     const citizenId = c?.citizenId ?? c?.id ?? null;
+    const division = typeof c?.division === 'number' ? c.division : null;
+    const residenceRegionId = typeof c?.residence?.regionId === 'number' ? c.residence.regionId : null;
 
-    return { csrf, countryId, citizenId };
+    return { csrf, countryId, citizenId, division, residenceRegionId };
   });
 
   if (!info.csrf) throw new Error('CSRF token not found on /en');
-  return { csrf: info.csrf, countryId: info.countryId ?? null, citizenId: info.citizenId ?? null };
+  return {
+    csrf: info.csrf,
+    countryId: info.countryId ?? null,
+    citizenId: info.citizenId ?? null,
+    division: info.division ?? null,
+    residenceRegionId: info.residenceRegionId ?? null,
+  };
 }
