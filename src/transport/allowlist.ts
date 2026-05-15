@@ -22,6 +22,15 @@ const PHASE_1_ALLOWLIST: readonly AllowEntry[] = [
   { method: 'POST', path: '/en/main/objective-claim-reward' },
   { method: 'GET', path: '/en/main/weekly-challenge-data' },
   { method: 'POST', path: '/en/main/weekly-challenge-collect-all' },
+  { method: 'GET', path: '/en/military/campaignsJson/list' },
+  { method: 'GET', path: '/en/military/campaignsJson/citizen' },
+  { method: 'GET', path: '/en/military/battle-stats/' },
+  { method: 'POST', path: '/en/main/travelData' },
+  { method: 'POST', path: '/en/main/battlefieldTravel' },
+  { method: 'POST', path: '/en/military/fightDeploy-getInventory' },
+  { method: 'POST', path: '/en/military/fightDeploy-startDeploy' },
+  { method: 'POST', path: '/en/military/fightDeploy-cancelDeploy' },
+  { method: 'POST', path: '/en/military/battle-console' },
 ];
 
 export function isAllowed(method: HttpMethod, path: string): boolean {
