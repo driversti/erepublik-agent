@@ -1,0 +1,9 @@
+services:
+  agent:
+    image: registry.yurii.live/erepublik-agent:latest
+    container_name: erepublik-agent
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./sessions:/app/sessions
+    # No ports — outbound only (eRepublik HTTPS + Telegram Bot API).

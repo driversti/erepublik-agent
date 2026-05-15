@@ -1,0 +1,15 @@
+node_modules
+sessions
+.git
+.gitignore
+.env
+.env.local
+.env.*.local
+*.log
+docs
+README.md
+CLAUDE.md
+.claude
+.idea
+.vscode
+_smoke*.ts
