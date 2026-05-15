@@ -62,7 +62,9 @@ while remaining not empty AND budget OK:
   remaining.remove(next)
 ```
 
-### 3.2 `pickNext(state, remaining)`
+### 3.2 `pickNext(state, remaining)` — which battle is next?
+
+Plain English: **"is there a battle in the country I'm already standing in? If yes, pick the one whose OTHER side is cheapest to fly to next. If no, just fly to the cheapest reachable battle anywhere."**
 
 Two-tier selection:
 
@@ -85,11 +87,39 @@ Two-tier selection:
 
 In both tiers, **any battle whose required first hop exceeds `ERP_FARM_MAX_TRAVEL_CC` is excluded entirely.** If after exclusion no candidate survives, `pickNext` returns null and the run stops with a clear log line.
 
-### 3.3 `orderSides(battle, currentCountryId)`
+**Worked example.** I'm in **PL**. Remaining candidates:
 
-- If `currentCountryId == battle.invaderId` → fight invader first (zero/cheap hop into existing country), then defender.
-- Else if `currentCountryId == battle.defenderId` → fight defender first, then invader.
-- Else (bridging case, neither side matches) → fight whichever side is cheaper to reach from `state.regionId` first, then the other.
+| Battle | Sides | Notes |
+|--------|-------|-------|
+| A | PL vs DE | one side matches PL |
+| B | PL vs RU | one side matches PL |
+| C | DE vs FR | neither matches PL |
+| D | SE vs NO | neither matches PL |
+| E | UA vs HU | neither matches PL |
+
+Intra-country pool: `[A, B]`. Within it, compare second-hop costs: PL→DE = 30cc, PL→RU = 80cc. **Pick A.** Fight PL side (0cc, I'm already there), fly to DE (30cc), fight DE side. Now I'm in DE.
+
+Next iteration: remaining = `[B, C, D, E]`. Intra pool now = `[C]` (DE matches). Pick C, fight DE side first (0cc), fly to FR.
+
+Next iteration: remaining = `[B, D, E]`. Intra pool = `[]` (none touches FR). Bridge: pick whichever has the cheapest single hop from FR. Continue.
+
+### 3.3 `orderSides(battle, currentCountryId)` — which side first?
+
+Plain English: **"start with the side whose country you're already in (free hop). If you're not in either country, start with whichever side is cheaper to reach."**
+
+Today's code always fights invader first. That's wrong when you're already standing in the defender's country — it forces an extra round-trip (defender_country → invader_country → defender_country) instead of (defender_country → invader_country).
+
+Rules:
+
+- `currentCountryId == battle.invaderId` → invader first, then defender.
+- `currentCountryId == battle.defenderId` → defender first, then invader.
+- Neither matches (bridging case) → whichever side's region is cheaper to reach from `state.regionId` goes first; the other side goes second.
+
+**Worked example.** Battle A is **PL vs DE**.
+
+- I'm in PL → fight PL side first (0cc), then fly to DE.
+- I'm in DE → fight DE side first (0cc), then fly to PL.
+- I'm in HU (bridging) → compare HU→PL vs HU→DE; whichever is cheaper goes first.
 
 ### 3.4 Why 1-step lookahead, not deeper
 
