@@ -112,15 +112,6 @@ interface SidedBattleCost {
 }
 
 /**
- * Pick the next battle to farm.
- *
- * Plain English: "is there a battle in the country I'm already standing in?
- * If yes, pick the one whose OTHER side is cheapest to fly to next.
- * If no, just fly to the cheapest reachable battle anywhere."
- *
- * Returns null if nothing is reachable within `maxTravelCC`.
- */
-/**
  * Mutate routing state to reflect that we just fought the given ordered sides
  * of `battle`, traveling first from current location to `firstTravel.toRegionId`
  * (cost `firstTravel.cost`), then to `secondTravel.toRegionId` (cost
@@ -156,6 +147,15 @@ export function advanceRouting(
   state.countryId = secondTravel.toCountryId;
 }
 
+/**
+ * Pick the next battle to farm.
+ *
+ * Plain English: "is there a battle in the country I'm already standing in?
+ * If yes, pick the one whose OTHER side is cheapest to fly to next.
+ * If no, just fly to the cheapest reachable battle anywhere."
+ *
+ * Returns null if nothing is reachable within `maxTravelCC`.
+ */
 export async function pickNext(
   state: RoutingState,
   remaining: FarmableBattle[],
