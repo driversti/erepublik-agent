@@ -20,6 +20,7 @@ import { collectMissionRewards } from '../tools/claim.js';
 import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { runFarmSession } from '../farm/session.js';
+import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -29,6 +30,9 @@ const Env = z.object({
   LOOP_INTERVAL_MS: z.coerce.number().int().positive().default(600_000),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
+  ERP_CAPTCHA_PROVIDER: z.enum(['none', '2captcha']).default('none'),
+  ERP_CAPTCHA_API_KEY: z.string().optional(),
+  ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
 });
 type Env = z.infer<typeof Env>;
 
@@ -98,6 +102,7 @@ async function runAction(
 async function runCycle(
   ctx: BrowserContext,
   notifier: TelegramNotifier,
+  captchaCfg: CaptchaConfig,
 ): Promise<void> {
   const day = eRepublikDay();
   const { state, rolledOver } = loadOrInit(day);
@@ -110,7 +115,19 @@ async function runCycle(
 
   // refresh: true → page.goto('/en/military/campaigns'), re-populates
   // erepublik.citizen globals and surfaces fuelLeft in the DOM.
-  const ctxInfo = await extractCitizenContext(ctx, { refresh: true });
+  let ctxInfo = await extractCitizenContext(ctx, { refresh: true });
+
+  // If eRepublik flagged the session, the captcha overlay sits on top of the page.
+  // Solve it here — before any API call — and re-read context (CSRF/state may shift).
+  const captcha = await handleCaptchaIfPresent(ctx, captchaCfg);
+  if (captcha.detected && !captcha.solved) {
+    throw new Error(`captcha blocking the session: ${captcha.reason ?? 'unsolved'}`);
+  }
+  if (captcha.solved) {
+    console.log('[cycle] captcha solved — re-extracting citizen context');
+    ctxInfo = await extractCitizenContext(ctx, { refresh: true });
+  }
+
   const { csrf } = ctxInfo;
   const countryId = ctxInfo.countryId ?? env.ERP_COUNTRY_ID ?? null;
   if (countryId == null) {
@@ -294,6 +311,18 @@ function sleep(ms: number): Promise<void> {
 const ctx = await openSession({ accountSlug: env.ERP_ACCOUNT_SLUG, headed: env.HEADED === 'true' });
 const notifier = new TelegramNotifier({ token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID });
 
+if (env.ERP_CAPTCHA_PROVIDER !== 'none' && !env.ERP_CAPTCHA_API_KEY) {
+  console.warn(
+    `[runner] ERP_CAPTCHA_PROVIDER=${env.ERP_CAPTCHA_PROVIDER} but ERP_CAPTCHA_API_KEY is unset — captchas will not be auto-solved`,
+  );
+}
+const captchaCfg: CaptchaConfig = {
+  provider: env.ERP_CAPTCHA_PROVIDER,
+  apiKey: env.ERP_CAPTCHA_API_KEY,
+  maxAttempts: env.ERP_CAPTCHA_MAX_ATTEMPTS,
+  notify: (m) => notifier.send(m),
+};
+
 let stopping = false;
 process.on('SIGINT', () => {
   if (stopping) process.exit(1);
@@ -304,7 +333,7 @@ process.on('SIGINT', () => {
 try {
   do {
     try {
-      await runCycle(ctx, notifier);
+      await runCycle(ctx, notifier, captchaCfg);
     } catch (err) {
       const message = (err as Error).message;
       console.error('[cycle] failed:', message);

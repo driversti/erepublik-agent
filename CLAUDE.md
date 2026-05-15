@@ -85,7 +85,21 @@ Important field-name quirks captured by `tools/farm.ts`:
 - **Endpoint allow-list** (`src/transport/allowlist.ts`) — every HTTP call must match `(method, path)` in `PHASE_1_ALLOWLIST` or `apiCall` throws. The set currently covers: auth/profile read, missions/objectives/weekly read+claim, marketplaceAjax/Actions, work, training-grounds-json + train, vip-claim, and the farming endpoints (`campaignsJson/list|citizen`, `battle-stats/`, `travelData`, `battlefieldTravel`, `fightDeploy-{getInventory,startDeploy,cancelDeploy}`, `battle-console`).
 - **Per-action guards** — `buyFromOffer` hard-rejects `amount !== 1`; `buyOneCheapestFood` is hardcoded to `industry=FOOD, quality=1` and refuses to buy above `ERP_MAX_FOOD_PRICE`.
 - **Once-per-cycle gating** — `runAction()` is only invoked for items in `pendingActions(state)`. A successful action flips the flag in memory immediately, so the same call can never fire twice within a single eRepublik day.
-- **Playwright clicks** are reserved for the login flow in `bootstrap.ts`. Everything else is `fetch` through the authenticated browser context.
+- **Playwright clicks** are reserved for the login flow in `bootstrap.ts` and the captcha solver in `tools/captcha.ts`. Everything else is `fetch` through the authenticated browser context.
+
+### Captcha handling (`src/tools/captcha.ts`)
+
+eRepublik throws a session-unlock captcha (image-coordinate challenge) when it suspects bot activity. The handler mirrors the ePlus userscript flow (`ePlus/client/src/plugins/premium/captchaSolver.ts`):
+
+1. **Detect** — `runCycle` calls `handleCaptchaIfPresent()` right after `extractCitizenContext()`. It checks the current page DOM for `#startSessionVerify` (the verify button) or `#captchaImage`.
+2. **Reveal** — `page.evaluate(() => #startSessionVerify.click())` to surface the image; then `page.waitForFunction` until `#captchaImage.src` starts with `data:image`.
+3. **Solve** — provider `2captcha` POSTs the base64 to `api.2captcha.com/createTask` as a `CoordinatesTask`, polls `getTaskResult` every 5s (≤2 min), and gets back `[{x, y}, …]`.
+4. **Submit** — for each coordinate, dispatch a synthetic `MouseEvent('click', { clientX: rect.left + x, clientY: rect.top + y })` on the image (the captcha JS derives `offsetX/Y` from these). Then click `#sessionUnlockSubmit`.
+5. **Verify + retry** — wait ~2.5s, re-check for `#startSessionVerify`. If still present, click `#refreshIcon` and retry up to `ERP_CAPTCHA_MAX_ATTEMPTS`.
+
+If detected but unsolved (provider=`none`, no API key, or all attempts failed), `runCycle` throws and the runner sleeps to the next interval. Telegram alerts fire on detect / success / failure.
+
+Configuration (env vars): `ERP_CAPTCHA_PROVIDER` (`none` default | `2captcha`), `ERP_CAPTCHA_API_KEY`, `ERP_CAPTCHA_MAX_ATTEMPTS` (default 3). The captcha submission goes through eRepublik's in-page JS (not our `apiCall`), so no `allowlist.ts` entry is required.
 
 When extending the **daily runner**: add the endpoint to `allowlist.ts`, add the implementation in `tools/*.ts` (pure function, no memory writes), then wire it into `runner.ts` — either as a new `runAction` branch (with memory mutation on success) or as a new sweep call. When extending the **farming pipeline**: only `allowlist.ts` + `tools/farm.ts` / `tools/battles.ts` need changes.
 
