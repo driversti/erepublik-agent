@@ -279,4 +279,4 @@ farmRunner.ts / farmOne.ts       operator CLIs
 
 ## Disclaimer
 
-Personal automation tool. Use against your own account. Respect [eRepublik Terms of Service](https://www.erepublik.com/en/main/terms-of-service).
+Personal automation tool. Use against your own account. Respect [eRepublik Terms of Service](https://www.erepublik.com/en/main/terms-and-conditions).
