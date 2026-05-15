@@ -120,6 +120,42 @@ interface SidedBattleCost {
  *
  * Returns null if nothing is reachable within `maxTravelCC`.
  */
+/**
+ * Mutate routing state to reflect that we just fought the given ordered sides
+ * of `battle`, traveling first from current location to `firstTravel.toRegionId`
+ * (cost `firstTravel.cost`), then to `secondTravel.toRegionId` (cost
+ * `secondTravel.cost`). Pushes both hops, updates totals and current location.
+ */
+export function advanceRouting(
+  state: RoutingState,
+  battle: FarmableBattle,
+  ordered: OrderedSides,
+  firstTravel: TravelOption,
+  secondTravel: TravelOption,
+): void {
+  state.totalTravelCC += firstTravel.cost + secondTravel.cost;
+  state.hops.push(
+    {
+      battleId: battle.battleId,
+      side: ordered.first.side,
+      fromRegionId: state.regionId,
+      toRegionId: firstTravel.toRegionId,
+      toCountryId: firstTravel.toCountryId,
+      cost: firstTravel.cost,
+    },
+    {
+      battleId: battle.battleId,
+      side: ordered.second.side,
+      fromRegionId: firstTravel.toRegionId,
+      toRegionId: secondTravel.toRegionId,
+      toCountryId: secondTravel.toCountryId,
+      cost: secondTravel.cost,
+    },
+  );
+  state.regionId = secondTravel.toRegionId;
+  state.countryId = secondTravel.toCountryId;
+}
+
 export async function pickNext(
   state: RoutingState,
   remaining: FarmableBattle[],

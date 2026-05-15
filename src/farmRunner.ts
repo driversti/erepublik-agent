@@ -18,7 +18,7 @@ import {
   verifyHitRegistered,
   type TravelOption,
 } from './tools/farm.js';
-import { initRoutingState, orderSides, pickNext, formatSequence, type RoutingState } from './farm/routing.js';
+import { advanceRouting, initRoutingState, orderSides, pickNext, type RoutingState } from './farm/routing.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -354,7 +354,8 @@ try {
     }
 
     const c = picked.battle;
-    remaining.splice(remaining.indexOf(c), 1);
+    const idx = remaining.indexOf(c);
+    if (idx !== -1) remaining.splice(idx, 1);
 
     // Verify empty (preserved — same call as today)
     const check = await isBattleDivisionEmpty(
@@ -401,27 +402,7 @@ try {
       farmedCount++;
       // In dry-run, advance routing state as if we had fought, so subsequent
       // pickNext() calls reflect the post-battle location.
-      routing.totalTravelCC += firstTravel.cost + secondTravel.cost;
-      routing.hops.push(
-        {
-          battleId: c.battleId,
-          side: ordered.first.side,
-          fromRegionId: routing.regionId,
-          toRegionId: firstTravel.toRegionId,
-          toCountryId: firstTravel.toCountryId,
-          cost: firstTravel.cost,
-        },
-        {
-          battleId: c.battleId,
-          side: ordered.second.side,
-          fromRegionId: firstTravel.toRegionId,
-          toRegionId: secondTravel.toRegionId,
-          toCountryId: secondTravel.toCountryId,
-          cost: secondTravel.cost,
-        },
-      );
-      routing.regionId = secondTravel.toRegionId;
-      routing.countryId = secondTravel.toCountryId;
+      advanceRouting(routing, c, ordered, firstTravel, secondTravel);
       continue;
     }
 
@@ -432,27 +413,7 @@ try {
       if (fuelLine != null) lastFuel = fuelLine;
       if (out.poolEnergyAfter != null) lastPoolEnergy = out.poolEnergyAfter;
 
-      routing.totalTravelCC += firstTravel.cost + secondTravel.cost;
-      routing.hops.push(
-        {
-          battleId: c.battleId,
-          side: ordered.first.side,
-          fromRegionId: routing.regionId,
-          toRegionId: firstTravel.toRegionId,
-          toCountryId: firstTravel.toCountryId,
-          cost: firstTravel.cost,
-        },
-        {
-          battleId: c.battleId,
-          side: ordered.second.side,
-          fromRegionId: firstTravel.toRegionId,
-          toRegionId: secondTravel.toRegionId,
-          toCountryId: secondTravel.toCountryId,
-          cost: secondTravel.cost,
-        },
-      );
-      routing.regionId = secondTravel.toRegionId;
-      routing.countryId = secondTravel.toCountryId;
+      advanceRouting(routing, c, ordered, firstTravel, secondTravel);
 
       const inv = ordered.first.side === 'invader' ? out.first : out.second;
       const def = ordered.first.side === 'invader' ? out.second : out.first;
