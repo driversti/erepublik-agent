@@ -62,7 +62,8 @@ Rules:
 }
 
 function snapshotHash(state: DailyState, weekly: WeeklyState): string {
-  const data = JSON.stringify({ state, weekly });
+  const { lastDigestHash: _ignored, ...stateForHash } = state;
+  const data = JSON.stringify({ state: stateForHash, weekly });
   return createHash('sha256').update(data).digest('hex').slice(0, 12);
 }
 
