@@ -30,7 +30,7 @@ const Env = z.object({
   ERP_FARM_WHITELIST_COUNTRIES: z.string().default(''),
   ERP_FARM_WEAPON_QUALITY: z.coerce.number().int().default(-1),
   ERP_FARM_TOTAL_ENERGY: z.coerce.number().int().default(33),
-  ERP_FARM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+  ERP_FARM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(10),
   ERP_FARM_RETRY_DELAY_MS: z.coerce.number().int().nonnegative().default(500),
   ERP_FARM_HANDOFF_SLEEP_MS: z.coerce.number().int().nonnegative().default(2000),
 });
