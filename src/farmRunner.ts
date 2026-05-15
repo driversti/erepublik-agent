@@ -23,7 +23,7 @@ const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
   HEADED: z.enum(['true', 'false']).default('false'),
   ERP_FARM_MAX_BATTLES: z.coerce.number().int().nonnegative().default(5),
-  ERP_FARM_MAX_TRAVEL_CC: z.coerce.number().nonnegative().default(20),
+  ERP_FARM_MAX_TRAVEL_CC: z.coerce.number().nonnegative().default(400),
   ERP_FARM_MIN_FUEL: z.coerce.number().int().nonnegative().default(10),
   ERP_FARM_MIN_BATTLE_MINUTES: z.coerce.number().int().nonnegative().default(5),
   ERP_FARM_BLOCKED_COUNTRIES: z.string().default(''),
