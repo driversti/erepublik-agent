@@ -18,6 +18,7 @@ import {
   verifyHitRegistered,
   type TravelOption,
 } from './tools/farm.js';
+import { initRoutingState, orderSides, pickNext, formatSequence, type RoutingState } from './farm/routing.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -163,9 +164,10 @@ async function farmBattleBothSides(
   ctx: BrowserContext,
   info: { csrf: string; citizenId: number; division: number },
   target: FarmableBattle,
-  invTravel: TravelOption,
-  defTravel: TravelOption,
-): Promise<{ invader: SideOutcome; defender: SideOutcome; poolEnergyAfter: number | null }> {
+  ordered: { first: { side: 'invader' | 'defender'; countryId: number }; second: { side: 'invader' | 'defender'; countryId: number } },
+  firstTravel: TravelOption,
+  secondTravel: TravelOption,
+): Promise<{ first: SideOutcome; second: SideOutcome; poolEnergyAfter: number | null }> {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   const battleUrl = `https://www.erepublik.com/en/military/battlefield/${target.battleId}`;
   await page.goto(battleUrl, { waitUntil: 'domcontentloaded' });
@@ -175,23 +177,32 @@ async function farmBattleBothSides(
 
   const defaultSkin = skinForDivision(info.division);
 
-  // ── invader ───────────────────────────────────────────────────────────────
+  // ── first side ────────────────────────────────────────────────────────────
   const travelA = await battlefieldTravel(
     ctx,
     info.csrf,
     target.battleId,
     target.battleZoneId,
-    target.invaderId,
-    invTravel.toCountryId,
-    invTravel.toRegionId,
+    ordered.first.countryId,
+    firstTravel.toCountryId,
+    firstTravel.toRegionId,
   );
-  if (!travelA.success) throw new Error(`travel→invader: ${travelA.message}`);
+  if (!travelA.success) throw new Error(`travel→${ordered.first.side}: ${travelA.message}`);
 
-  const invA = await getDeployInventory(ctx, info.csrf, target.battleId, target.invaderId, target.battleZoneId);
+  const invA = await getDeployInventory(ctx, info.csrf, target.battleId, ordered.first.countryId, target.battleZoneId);
   const skinA = invA.skinId ?? defaultSkin;
-  const resA = await deployWithRetryRunner(ctx, info.csrf, info.citizenId, info.division, target, 'invader', target.invaderId, skinA);
+  const resA = await deployWithRetryRunner(
+    ctx,
+    info.csrf,
+    info.citizenId,
+    info.division,
+    target,
+    ordered.first.side,
+    ordered.first.countryId,
+    skinA,
+  );
 
-  // ── handoff ──────────────────────────────────────────────────────────────
+  // ── handoff ───────────────────────────────────────────────────────────────
   await sleep(env.ERP_FARM_HANDOFF_SLEEP_MS);
   resA.verified = await verifyHitRegistered(
     ctx,
@@ -200,35 +211,45 @@ async function farmBattleBothSides(
     target.zoneId,
     info.division,
     target.battleZoneId,
-    target.invaderId,
+    ordered.first.countryId,
     info.citizenId,
   ).catch(() => resA.verified);
   await cancelDeploy(ctx, info.csrf, target.battleId).catch(() => null);
 
-  // ── defender ──────────────────────────────────────────────────────────────
+  // ── second side ───────────────────────────────────────────────────────────
   const travelB = await battlefieldTravel(
     ctx,
     info.csrf,
     target.battleId,
     target.battleZoneId,
-    target.defenderId,
-    defTravel.toCountryId,
-    defTravel.toRegionId,
+    ordered.second.countryId,
+    secondTravel.toCountryId,
+    secondTravel.toRegionId,
   );
-  if (!travelB.success) throw new Error(`travel→defender: ${travelB.message}`);
+  if (!travelB.success) throw new Error(`travel→${ordered.second.side}: ${travelB.message}`);
 
-  const invB = await getDeployInventory(ctx, info.csrf, target.battleId, target.defenderId, target.battleZoneId);
+  const invB = await getDeployInventory(ctx, info.csrf, target.battleId, ordered.second.countryId, target.battleZoneId);
   const skinB = invB.skinId ?? defaultSkin;
-  const resB = await deployWithRetryRunner(ctx, info.csrf, info.citizenId, info.division, target, 'defender', target.defenderId, skinB);
-
-  // After both deploys, peek inventory once more to get the freshest pool
-  // reading. Used by the outer loop to stop before starting an unfundable
-  // next battle.
-  const invAfter = await getDeployInventory(ctx, info.csrf, target.battleId, target.defenderId, target.battleZoneId).catch(
-    () => null,
+  const resB = await deployWithRetryRunner(
+    ctx,
+    info.csrf,
+    info.citizenId,
+    info.division,
+    target,
+    ordered.second.side,
+    ordered.second.countryId,
+    skinB,
   );
 
-  return { invader: resA, defender: resB, poolEnergyAfter: invAfter?.poolEnergy ?? null };
+  const invAfter = await getDeployInventory(
+    ctx,
+    info.csrf,
+    target.battleId,
+    ordered.second.countryId,
+    target.battleZoneId,
+  ).catch(() => null);
+
+  return { first: resA, second: resB, poolEnergyAfter: invAfter?.poolEnergy ?? null };
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -238,9 +259,20 @@ const t0 = Date.now();
 
 try {
   const raw = await extractCitizenContext(ctx);
-  if (raw.division == null || raw.citizenId == null || raw.countryId == null || raw.residenceRegionId == null) {
+  if (
+    raw.division == null ||
+    raw.citizenId == null ||
+    raw.countryId == null ||
+    raw.residenceRegionId == null
+  ) {
     throw new Error(
       `Missing citizen context: division=${raw.division}, citizenId=${raw.citizenId}, countryId=${raw.countryId}, residenceRegionId=${raw.residenceRegionId}`,
+    );
+  }
+  const residenceCountryId = raw.residenceCountryId ?? raw.countryId;
+  if (raw.residenceCountryId == null) {
+    console.log(
+      `[farm-runner] ⚠ residenceCountryId not in page context — falling back to citizenship country ${raw.countryId}`,
     );
   }
   const info = {
@@ -249,8 +281,11 @@ try {
     countryId: raw.countryId,
     division: raw.division,
     residenceRegionId: raw.residenceRegionId,
+    residenceCountryId,
   };
-  console.log(`[farm-runner] citizen=${info.citizenId} country=${info.countryId} division=${info.division}`);
+  console.log(
+    `[farm-runner] citizen=${info.citizenId} country=${info.countryId} division=${info.division} residence=region${info.residenceRegionId}/country${info.residenceCountryId}`,
+  );
 
   const list = await listFarmableBattles(ctx, info.csrf, info.division);
   const elig = await getCitizenEligibility(ctx, info.csrf);
@@ -281,14 +316,16 @@ try {
 
   console.log(`[farm-runner] ${candidates.length} fightable after filters (blocked/eligibility/age)`);
 
+  const routing: RoutingState = initRoutingState(info.residenceRegionId, info.residenceCountryId);
+  const remaining = [...candidates];
   let farmedCount = 0;
   let lastFuel: number | null = null;
   let lastPoolEnergy: number | null = null;
-  const minEnergyPerBattle = env.ERP_FARM_TOTAL_ENERGY * 2; // two hits per battle
+  const minEnergyPerBattle = env.ERP_FARM_TOTAL_ENERGY * 2;
   const wins: Array<{ battleId: number; regionName: string; inv: SideOutcome; def: SideOutcome }> = [];
   const skipped: Array<{ battleId: number; regionName: string; reason: string }> = [];
 
-  for (const c of candidates) {
+  while (remaining.length > 0) {
     if (farmedCount >= env.ERP_FARM_MAX_BATTLES) {
       console.log(`[farm-runner] reached max-battles cap (${env.ERP_FARM_MAX_BATTLES}) — stopping`);
       break;
@@ -298,14 +335,36 @@ try {
       break;
     }
     if (lastPoolEnergy != null && lastPoolEnergy < minEnergyPerBattle) {
-      console.log(`[farm-runner] pool energy ${lastPoolEnergy} below ${minEnergyPerBattle} (=${env.ERP_FARM_TOTAL_ENERGY}×2) — stopping`);
+      console.log(
+        `[farm-runner] pool energy ${lastPoolEnergy} below ${minEnergyPerBattle} (=${env.ERP_FARM_TOTAL_ENERGY}×2) — stopping`,
+      );
       break;
     }
 
-    // Verify empty
-    const check = await isBattleDivisionEmpty(ctx, info.csrf, c.battleId, info.division, c.battleZoneId, c.zoneId).catch(
-      () => null,
-    );
+    const picked = await pickNext(routing, remaining, {
+      getTravel: (battleId, fromRegionId, toCountryId) =>
+        findCheapestTravelRegion(ctx, info.csrf, battleId, fromRegionId, toCountryId),
+      maxTravelCC: env.ERP_FARM_MAX_TRAVEL_CC,
+    });
+    if (!picked) {
+      console.log(
+        `[farm-runner] no reachable battle within ${env.ERP_FARM_MAX_TRAVEL_CC}cc per hop — stopping (${remaining.length} candidates left unreached)`,
+      );
+      break;
+    }
+
+    const c = picked.battle;
+    remaining.splice(remaining.indexOf(c), 1);
+
+    // Verify empty (preserved — same call as today)
+    const check = await isBattleDivisionEmpty(
+      ctx,
+      info.csrf,
+      c.battleId,
+      info.division,
+      c.battleZoneId,
+      c.zoneId,
+    ).catch(() => null);
     if (!check) {
       skipped.push({ battleId: c.battleId, regionName: c.regionName, reason: 'empty-check failed' });
       continue;
@@ -319,42 +378,91 @@ try {
       continue;
     }
 
-    // Travel costs (both sides)
-    const invTravel = await findCheapestTravelRegion(ctx, info.csrf, c.battleId, info.residenceRegionId, c.invaderId);
-    const defTravel = await findCheapestTravelRegion(ctx, info.csrf, c.battleId, info.residenceRegionId, c.defenderId);
-    if (!invTravel || !defTravel) {
-      skipped.push({ battleId: c.battleId, regionName: c.regionName, reason: 'no travel route' });
-      continue;
-    }
-    if (invTravel.cost > env.ERP_FARM_MAX_TRAVEL_CC || defTravel.cost > env.ERP_FARM_MAX_TRAVEL_CC) {
-      skipped.push({
-        battleId: c.battleId,
-        regionName: c.regionName,
-        reason: `travel too expensive (inv=${invTravel.cost}cc, def=${defTravel.cost}cc)`,
-      });
-      continue;
-    }
+    const ordered = orderSides(c, routing.countryId, picked.bridgingFirstSide);
+    const firstTravel = {
+      toCountryId: picked.firstHopCountryId,
+      toRegionId: picked.firstHopRegionId,
+      cost: picked.firstHopCost,
+    };
+    const secondTravel = {
+      toCountryId: picked.secondHopCountryId,
+      toRegionId: picked.secondHopRegionId,
+      cost: picked.secondHopCost,
+    };
 
-    const header = `🎯 battle ${c.battleId} ${c.regionName} (Inv ${c.invaderId} vs Def ${c.defenderId}) | travel inv=${invTravel.cost}cc def=${defTravel.cost}cc`;
+    const header =
+      `🎯 #${c.battleId} ${c.regionName} ` +
+      `(Inv ${c.invaderId} vs Def ${c.defenderId}) | location=c${routing.countryId} → ` +
+      `fight ${ordered.first.side} c${ordered.first.countryId} (${firstTravel.cost}cc) → ` +
+      `fight ${ordered.second.side} c${ordered.second.countryId} (${secondTravel.cost}cc)`;
+
     if (!execute) {
       console.log(`${header} | (dry-run)`);
-      farmedCount++; // Count toward cap so dry-run shows the same N candidates that would be farmed
+      farmedCount++;
+      // In dry-run, advance routing state as if we had fought, so subsequent
+      // pickNext() calls reflect the post-battle location.
+      routing.totalTravelCC += firstTravel.cost + secondTravel.cost;
+      routing.hops.push(
+        {
+          battleId: c.battleId,
+          side: ordered.first.side,
+          fromRegionId: routing.regionId,
+          toRegionId: firstTravel.toRegionId,
+          toCountryId: firstTravel.toCountryId,
+          cost: firstTravel.cost,
+        },
+        {
+          battleId: c.battleId,
+          side: ordered.second.side,
+          fromRegionId: firstTravel.toRegionId,
+          toRegionId: secondTravel.toRegionId,
+          toCountryId: secondTravel.toCountryId,
+          cost: secondTravel.cost,
+        },
+      );
+      routing.regionId = secondTravel.toRegionId;
+      routing.countryId = secondTravel.toCountryId;
       continue;
     }
 
     console.log(header);
     try {
-      const out = await farmBattleBothSides(ctx, info, c, invTravel, defTravel);
-      const fuelLine = out.defender.fuelLeft ?? out.invader.fuelLeft;
+      const out = await farmBattleBothSides(ctx, info, c, ordered, firstTravel, secondTravel);
+      const fuelLine = out.second.fuelLeft ?? out.first.fuelLeft;
       if (fuelLine != null) lastFuel = fuelLine;
       if (out.poolEnergyAfter != null) lastPoolEnergy = out.poolEnergyAfter;
+
+      routing.totalTravelCC += firstTravel.cost + secondTravel.cost;
+      routing.hops.push(
+        {
+          battleId: c.battleId,
+          side: ordered.first.side,
+          fromRegionId: routing.regionId,
+          toRegionId: firstTravel.toRegionId,
+          toCountryId: firstTravel.toCountryId,
+          cost: firstTravel.cost,
+        },
+        {
+          battleId: c.battleId,
+          side: ordered.second.side,
+          fromRegionId: firstTravel.toRegionId,
+          toRegionId: secondTravel.toRegionId,
+          toCountryId: secondTravel.toCountryId,
+          cost: secondTravel.cost,
+        },
+      );
+      routing.regionId = secondTravel.toRegionId;
+      routing.countryId = secondTravel.toCountryId;
+
+      const inv = ordered.first.side === 'invader' ? out.first : out.second;
+      const def = ordered.first.side === 'invader' ? out.second : out.first;
       console.log(
-        `   ✅ inv: ${out.invader.attempts}att/verified=${out.invader.verified}/fuel=${out.invader.fuelLeft ?? '?'} | ` +
-          `def: ${out.defender.attempts}att/verified=${out.defender.verified}/fuel=${out.defender.fuelLeft ?? '?'} | ` +
+        `   ✅ inv: ${inv.attempts}att/verified=${inv.verified}/fuel=${inv.fuelLeft ?? '?'} | ` +
+          `def: ${def.attempts}att/verified=${def.verified}/fuel=${def.fuelLeft ?? '?'} | ` +
           `pool=${out.poolEnergyAfter ?? '?'}`,
       );
       farmedCount++;
-      wins.push({ battleId: c.battleId, regionName: c.regionName, inv: out.invader, def: out.defender });
+      wins.push({ battleId: c.battleId, regionName: c.regionName, inv, def });
     } catch (e) {
       const msg = (e as Error).message;
       console.log(`   ❌ ${msg}`);
