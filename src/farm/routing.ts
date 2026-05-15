@@ -138,8 +138,12 @@ export async function pickNext(
       const firstCountryId = firstSide === 'invader' ? battle.invaderId : battle.defenderId;
       const secondCountryId = firstSide === 'invader' ? battle.defenderId : battle.invaderId;
 
-      const firstHop = await deps.getTravel(battle.battleId, state.regionId, firstCountryId);
-      if (!firstHop || firstHop.cost > deps.maxTravelCC) continue;
+      // Tier 1 invariant: we're already in firstCountryId. No travel needed.
+      const firstHop: TravelOption = {
+        toRegionId: state.regionId,
+        toCountryId: firstCountryId,
+        cost: 0,
+      };
 
       const secondHop = await deps.getTravel(battle.battleId, firstHop.toRegionId, secondCountryId);
       if (!secondHop || secondHop.cost > deps.maxTravelCC) continue;
