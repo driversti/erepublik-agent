@@ -18,7 +18,7 @@ import {
   verifyHitRegistered,
   type TravelOption,
 } from './tools/farm.js';
-import { advanceRouting, initRoutingState, orderSides, pickNext, type RoutingState } from './farm/routing.js';
+import { advanceRouting, formatSequence, initRoutingState, orderSides, pickNext, type RoutingState } from './farm/routing.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -453,6 +453,8 @@ try {
     if (skipped.length > 10) console.log(`    … +${skipped.length - 10} more`);
   }
   if (lastFuel != null) console.log(`  last fuelLeft: ${lastFuel}`);
+  console.log(`  hops: ${routing.hops.length} (total travel: ${routing.totalTravelCC}cc)`);
+  console.log(`  sequence: ${formatSequence(routing.hops)}`);
 } finally {
   await ctx.close();
 }
