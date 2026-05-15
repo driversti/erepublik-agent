@@ -2,27 +2,27 @@ import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BrowserContext } from 'playwright-core';
-import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import { openSession, extractCitizenContext } from '../browser/session.js';
-import { buildTools } from './tools.js';
 import { eRepublikDay } from '../erepublik/day.js';
 import { loadOrInit, save } from '../memory/dailyState.js';
 import { allSafeDailyDone, pendingActions, type DailyState } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
-import { getObjectiveStatus } from '../tools/objectives.js';
-import { getWeeklyChallenge } from '../tools/weekly.js';
+import { getObjectiveStatus, collectObjectiveRewards } from '../tools/objectives.js';
+import { getWeeklyChallenge, collectWeeklyChallenge } from '../tools/weekly.js';
 import { loadWeekly, saveWeekly, type WeeklyState } from '../memory/weeklyState.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
+import { work } from '../tools/work.js';
+import { train } from '../tools/train.js';
+import { claimVip } from '../tools/vip.js';
+import { buyOneCheapestFood } from '../tools/market.js';
+import { collectMissionRewards } from '../tools/claim.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
   ERP_COUNTRY_ID: z.coerce.number().int().positive().optional(),
   ERP_MAX_FOOD_PRICE: z.coerce.number().positive(),
   HEADED: z.enum(['true', 'false']).default('false'),
-  ANTHROPIC_API_KEY: z.string().min(1),
-  CLAUDE_MODEL: z.string().default('claude-haiku-4-5'),
-  MAX_AGENT_ITERATIONS: z.coerce.number().int().positive().default(8),
   LOOP_INTERVAL_MS: z.coerce.number().int().positive().default(600_000),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
@@ -30,36 +30,9 @@ const Env = z.object({
 type Env = z.infer<typeof Env>;
 
 const env = Env.parse(process.env);
-process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
 
 const args = new Set(process.argv.slice(2));
 const ONCE = args.has('--once');
-
-function systemPrompt(pending: string[], claimedIds: number[]): string {
-  return `You are erepublik-agent.
-
-Today's pending safe-daily actions: [${pending.join(', ')}].
-Already-claimed mission IDs: [${claimedIds.join(', ') || 'none'}].
-
-Step 1 — For each item in the pending list, call the matching tool exactly once:
-- "work" → call the work tool
-- "train" → call the train tool
-- "vipClaim" → call the vipClaim tool
-- "buyFood" → call the buyFood tool
-
-Step 2 — After ALL action tools have returned (even if pending was empty), call collectMissionRewards exactly once.
-
-Step 3 — Then call collectObjectiveRewards exactly once to claim any unlocked AP chests.
-
-Step 4 — Then call collectWeeklyChallengeRewards exactly once to claim any new weekly tiers.
-
-Rules:
-- Skip any action NOT in the pending list.
-- One call per item. Do NOT retry on success. Do NOT call the same tool twice.
-- collectMissionRewards, collectObjectiveRewards, and collectWeeklyChallengeRewards are each called at most once per cycle, in that order, after the actions.
-- After all tools return, reply in <40 words summarising what you did.
-- No emoji. No tables. No invented tools.`;
-}
 
 function snapshotHash(state: DailyState, weekly: WeeklyState): string {
   const { lastDigestHash: _ignored, ...stateForHash } = state;
@@ -77,6 +50,43 @@ function formatDigest(day: number, state: DailyState, weekly: WeeklyState): stri
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
   ].join('\n');
+}
+
+async function runAction(
+  action: 'work' | 'train' | 'vipClaim' | 'buyFood',
+  ctx: BrowserContext,
+  csrf: string,
+  countryId: number,
+  state: DailyState,
+): Promise<void> {
+  const at = new Date().toISOString();
+  if (action === 'work') {
+    const r = await work(ctx, csrf);
+    if (r.success) state.completedActions.work = { at, source: 'agent' };
+    console.log(`[cycle] work: ${r.success ? '✅' : '❌'} status=${r.status}`);
+    return;
+  }
+  if (action === 'train') {
+    const r = await train(ctx, csrf);
+    if (r.success) state.completedActions.train = { at, source: 'agent' };
+    console.log(`[cycle] train: ${r.success ? '✅' : '❌'} status=${r.status}`);
+    return;
+  }
+  if (action === 'vipClaim') {
+    const r = await claimVip(ctx, csrf);
+    if (r.success) state.completedActions.vipClaim = { at, source: 'agent' };
+    console.log(`[cycle] vipClaim: ${r.success ? '✅' : '❌'}`);
+    return;
+  }
+  if (action === 'buyFood') {
+    const r = await buyOneCheapestFood(ctx, csrf, countryId, env.ERP_MAX_FOOD_PRICE);
+    if (r.success && r.offerId != null) {
+      state.completedActions.buyFood = { at, source: 'agent', offerId: r.offerId };
+    }
+    const tag = r.success ? `✅ @ ${r.price}` : `⏭  ${r.reason ?? 'failed'}`;
+    console.log(`[cycle] buyFood: ${tag}`);
+    return;
+  }
 }
 
 async function runCycle(
@@ -132,49 +142,57 @@ async function runCycle(
 
   try {
     if (shortCircuit) {
-      console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — short-circuit, no LLM call');
+      console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — nothing to do');
     } else {
       const pending = pendingActions(state);
       console.log(
-        `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}] → invoking ${env.CLAUDE_MODEL}`,
+        `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}]`,
       );
 
-      const tools = buildTools({
-        ctx,
-        csrf,
-        state,
-        weekly,
-        countryId,
-        maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
-      });
-      const mcpServer = createSdkMcpServer({ name: 'erepublik-agent-tools', tools });
-
-      const stream = query({
-        prompt: 'Run the cycle now.',
-        options: {
-          systemPrompt: systemPrompt(pending, state.claimedMissionIds),
-          model: env.CLAUDE_MODEL,
-          maxTurns: env.MAX_AGENT_ITERATIONS,
-          tools: [],
-          allowedTools: ['mcp__erepublik-agent-tools__*'],
-          mcpServers: { 'erepublik-agent-tools': mcpServer },
-          permissionMode: 'bypassPermissions',
-        },
-      });
-
-      for await (const msg of stream) {
-        if (msg.type === 'assistant') {
-          for (const block of msg.message.content) {
-            if (block.type === 'text') {
-              process.stdout.write(block.text);
-            } else if (block.type === 'tool_use') {
-              console.log(`\n[agent] → tool ${block.name}(${JSON.stringify(block.input).slice(0, 120)})`);
-            }
-          }
-        } else if (msg.type === 'result') {
-          console.log('\n[agent] ── result ──');
-          console.log(`  duration_ms: ${msg.duration_ms}, turns: ${msg.num_turns}, cost_usd: ${msg.total_cost_usd}`);
+      // 1. Run pending safe-daily actions in a fixed order.
+      for (const action of pending) {
+        try {
+          await runAction(action, ctx, csrf, countryId, state);
+        } catch (err) {
+          console.error(`[cycle] ${action} threw: ${(err as Error).message}`);
         }
+      }
+
+      // 2. Idempotent sweeps — safe to call even when nothing is claimable.
+      try {
+        const m = await collectMissionRewards(ctx, csrf, state.claimedMissionIds);
+        for (const id of m.claimed) {
+          if (!state.claimedMissionIds.includes(id)) state.claimedMissionIds.push(id);
+        }
+        if (m.claimed.length || m.failed.length) {
+          console.log(`[cycle] missions sweep: claimed=[${m.claimed.join(', ')}] failed=${m.failed.length}`);
+        }
+      } catch (err) {
+        console.error(`[cycle] collectMissionRewards threw: ${(err as Error).message}`);
+      }
+
+      try {
+        const o = await collectObjectiveRewards(ctx, csrf, state.claimedChestThresholds);
+        for (const cost of o.claimed) {
+          if (!state.claimedChestThresholds.includes(cost)) state.claimedChestThresholds.push(cost);
+        }
+        if (o.claimed.length || o.failed.length) {
+          console.log(`[cycle] objectives sweep: claimed=[${o.claimed.join(', ')}] failed=${o.failed.length}`);
+        }
+      } catch (err) {
+        console.error(`[cycle] collectObjectiveRewards threw: ${(err as Error).message}`);
+      }
+
+      try {
+        const w = await collectWeeklyChallenge(ctx, csrf, weekly.lastClaimedRewardId);
+        if (w.claimed && w.maxRewardId != null) {
+          weekly.lastClaimedRewardId = w.maxRewardId;
+          console.log(`[cycle] weekly sweep: claimed up to ${w.maxRewardId}`);
+        } else if (w.reason) {
+          console.log(`[cycle] weekly sweep: noop (${w.reason})`);
+        }
+      } catch (err) {
+        console.error(`[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`);
       }
     }
   } finally {

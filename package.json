@@ -20,7 +20,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
     "cloakbrowser": "^0.3.28",
     "dotenv": "^16.4.5",
     "playwright-core": "^1.49.0",

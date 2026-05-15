@@ -1,15 +1,15 @@
 # erepublik-agent
 
-Browser-driving automation for eRepublik, built on **CloakBrowser** (stealth Chromium) and the **Claude Agent SDK**. The repo hosts **two cooperating workloads** that share the same browser profile, transport layer, and endpoint allow-list — but are otherwise independent:
+Browser-driving automation for eRepublik, built on **CloakBrowser** (stealth Chromium). The repo hosts **two cooperating workloads** that share the same browser profile, transport layer, and endpoint allow-list — but are otherwise independent:
 
-| Workload | Driver | What it does | Entry points |
-|---|---|---|---|
-| **Daily agent** (LLM-orchestrated) | Claude Haiku 4.5 | Performs the safe-daily loop: `work`, `train`, buy 1 Q1 food, claim VIP, claim missions + AP chests + weekly challenge tiers. Long-running by default. | `npm start` / `npm run agent` |
-| **Gold-farming pipeline** (operator-only) | Plain TypeScript | Discovers empty-division battles, plans a cheapest-travel route, deploys on **both** sides to collect True Patriot / Freedom Fighter / Mercenary medals. **Not exposed to the LLM.** | `npm run farmer`, `npm run farm-one`, `npm run farmable` |
+| Workload | What it does | Entry points |
+|---|---|---|
+| **Daily runner** | Performs the safe-daily loop: `work`, `train`, buy 1 Q1 food, claim VIP, claim missions + AP chests + weekly challenge tiers. Long-running by default. | `npm start` / `npm run agent` |
+| **Gold-farming pipeline** | Discovers empty-division battles, plans a cheapest-travel route, deploys on **both** sides to collect True Patriot / Freedom Fighter / Mercenary medals. | `npm run farmer`, `npm run farm-one`, `npm run farmable` |
 
-The LLM only sees a fixed set of MCP tools registered in `src/agent/tools.ts`. The farming CLIs are deliberately separate — there is no MCP tool that fights, deploys, or travels, so Claude **cannot** spend energy on its own even if jailbroken.
+Both workloads are fully **deterministic** — no LLM is on the hot path. Every decision (what to do, in what order, when to stop) is made by plain TypeScript reading local memory and API responses.
 
-> Full design lives in `docs/superpowers/specs/2026-05-14-erepublik-agent-design.md`.
+> Earlier versions ran the daily loop through Claude Haiku via the Claude Agent SDK + MCP tools. That was removed once it became clear the model was only executing a fixed recipe with no real reasoning — see `docs/superpowers/specs/2026-05-14-erepublik-agent-design.md` for the original design.
 
 ---
 
@@ -17,7 +17,7 @@ The LLM only sees a fixed set of MCP tools registered in `src/agent/tools.ts`. T
 
 ```bash
 cp .env.example .env
-# Fill in: ERP_LOGIN, ERP_PASSWORD, ANTHROPIC_API_KEY, ERP_MAX_FOOD_PRICE.
+# Fill in: ERP_LOGIN, ERP_PASSWORD, ERP_MAX_FOOD_PRICE.
 # Telegram, farming, and tuning vars are optional.
 
 npm install
@@ -31,7 +31,7 @@ For a second account: set a different `ERP_ACCOUNT_SLUG`, re-run `bootstrap`, th
 
 ---
 
-## Daily agent (LLM loop)
+## Daily runner
 
 ```bash
 npm run agent            # one cycle, then exit
@@ -43,25 +43,22 @@ npm start                # long-running: cycle every LOOP_INTERVAL_MS (default 1
 1. Computes the current **eRepublik day** (PST midnight epoch — not UTC). Loads `sessions/daily-state-{day}.json`. If the day has rolled over, the previous file is archived.
 2. Reads `csrfToken`, `citizenId`, `countryId` from the live page (`SERVER_DATA` / `erepublik.citizen`).
 3. Calls three read-only endpoints: daily missions, objective chests, weekly challenge.
-4. **Reconciles** the API state into local memory — if the player did `work` manually (or another bot did it), the local flag is set to `source: 'external'` so the agent won't redo it.
-5. **Short-circuits**: if every safe-daily action is done AND there is nothing left to claim, the cycle exits **without calling Claude**. This is the hot path — most ticks of a long-running loop never spend Anthropic tokens.
-6. Otherwise invokes Claude with a fixed-shape system prompt listing the pending actions. Claude is restricted to the MCP tools below; `MAX_AGENT_ITERATIONS` (default 8) hard-caps the tool loop.
-7. Saves state. If anything changed since the last cycle, sends a Telegram digest (silent if no token configured).
+4. **Reconciles** the API state into local memory — if the player did `work` manually (or another bot did it), the local flag is set to `source: 'external'` so the runner won't redo it.
+5. **Short-circuits**: if every safe-daily action is done AND there is nothing left to claim, the cycle exits immediately. This is the hot path — most ticks of a long-running loop do nothing but a few read calls.
+6. Otherwise: derives `pending = pendingActions(state)` and runs each pending action **once, in a fixed order**: `work` → `train` → `vipClaim` → `buyFood`. Each call writes to memory on success so the next cycle (or a crash recovery) sees it as done.
+7. Calls three idempotent sweep functions: `collectMissionRewards`, `collectObjectiveRewards`, `collectWeeklyChallenge`. Safe to call even when nothing is claimable — they return empty lists.
+8. Saves state. If anything changed since the last cycle, sends a Telegram digest (silent if no token configured).
 
-### MCP tools the LLM can call
+### Actions
 
-| Tool | What it does |
-|---|---|
-| `getMissionState` | Read today's missions + which safe-daily ones are still pending. |
-| `work` | Mission 100001. POST `/en/economy/work`. Once per day. |
-| `train` | Mission 100003. Sweeps all free training grounds. Once per day. |
-| `buyFood` | Mission 100011. Buys 1 unit of the cheapest Q1 food on the home marketplace. **Hard-rejects if price > `ERP_MAX_FOOD_PRICE`**, and `amount` is hard-coded to 1. |
-| `vipClaim` | Daily VIP gift. Idempotent. |
-| `collectMissionRewards` | Sweeps every completed mission and claims its reward. |
-| `collectObjectiveRewards` | Sweeps unlocked AP chests (20/40/60/80/100). |
-| `collectWeeklyChallengeRewards` | Claims any newly-unlocked weekly tier (with reset detection). |
+| Action | Mission | Notes |
+|---|---|---|
+| `work` | 100001 | POST `/en/economy/work`. Once per day. |
+| `train` | 100003 | Sweeps all free training grounds. Once per day. |
+| `buyFood` | 100011 | Buys 1 unit of the cheapest Q1 food on the home marketplace. **Hard-rejects if price > `ERP_MAX_FOOD_PRICE`**, and `amount` is hard-coded to 1. |
+| `vipClaim` | — | Daily VIP gift. Idempotent. Not in `daily-missions-data`, so reconciliation cannot detect external completions — the runner is the only writer of this flag. |
 
-> Everything outside this list is unreachable — see *Safety boundaries* below.
+Each action is a plain async function in `src/tools/*.ts` (`work.ts`, `train.ts`, `vip.ts`, `market.ts`). The runner calls them directly. There is no agent SDK, no MCP server, no model in the loop.
 
 ### Memory layout
 
@@ -186,13 +183,10 @@ There is no test runner and no lint command in this project.
 | `ERP_MAX_FOOD_PRICE` | Hard ceiling on Q1 food unit price for `buyFood`. Typical Q1 prices are 0.5–2.0. |
 | `HEADED` | `true` to show the browser. Default `false`. |
 
-### Daily agent
+### Daily runner
 
 | Var | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Claude API key. |
-| `CLAUDE_MODEL` | Default `claude-haiku-4-5`. |
-| `MAX_AGENT_ITERATIONS` | Hard cap on tool calls per cycle. Default `8`. |
 | `LOOP_INTERVAL_MS` | Sleep between cycles in long-running mode. Default `600000` (10 min). |
 | `ERP_COUNTRY_ID` | Fallback only — `countryId` is normally auto-detected from `erepublik.citizen.citizenshipCountryId`. |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Optional. Notifier degrades silently if unset. |
@@ -230,18 +224,14 @@ Every HTTP call goes through `apiCall()` → `assertAllowed(method, path)` → t
 
 > Adding any new endpoint **requires editing `allowlist.ts`**. There is no other way in.
 
-### 2. LLM tool surface (narrower than the allow-list)
-
-The agent only sees the MCP tools listed under *Daily agent → MCP tools*. The **farming endpoints in the allow-list are reachable only from the operator-launched CLI scripts**, never from Claude. If you ever register a farming MCP tool, the agent gains the ability to spend energy in battles — that's an explicit design decision, not the current state.
-
-### 3. Per-action guards
+### 2. Per-action guards
 
 - `buyFromOffer` hard-rejects `amount !== 1`.
 - `buyOneCheapestFood` is hard-coded to `industry=FOOD, quality=1` and refuses prices above `ERP_MAX_FOOD_PRICE`.
-- `MAX_AGENT_ITERATIONS` caps how many tool calls Claude can make per cycle.
-- No `click` tool is exposed to the LLM — Playwright clicks are reserved for the login flow in `bootstrap.ts`.
+- The daily runner calls each action **once per cycle**, gated by `pendingActions(state)` reading from memory. A success flips the flag immediately so re-entry (next cycle or crash recovery) skips it.
+- Playwright clicks are reserved for the login flow in `bootstrap.ts`. Everything else is `fetch` through the authenticated browser context, with allow-list enforcement.
 
-### 4. Forbidden = stop
+### 3. Forbidden = stop
 
 A `Forbidden` response from any deploy endpoint means the IP/account is flagged. The farm runner throws `ForbiddenError` and aborts the entire run. Do not retry — swap IP or wait for the cooldown.
 
@@ -252,13 +242,12 @@ A `Forbidden` response from any deploy endpoint means the IP/account is flagged.
 ```
 agent/runner.ts                  long-running loop, day rollover, short-circuit, digest
   agent/cycle.ts                 reconcile(API → memory)
-  agent/tools.ts                 buildTools(): wraps semantic actions as MCP tools
-    tools/*.ts                   semantic operations (work, train, market, claim, …)
-      transport/apiCall.ts       context.request.fetch + CSRF + allow-list check
-        transport/allowlist.ts   the inviolable endpoint set
-          browser/session.ts     CloakBrowser persistent context
+  tools/*.ts                     semantic operations (work, train, market, claim, …)
+    transport/apiCall.ts         context.request.fetch + CSRF + allow-list check
+      transport/allowlist.ts     the inviolable endpoint set
+        browser/session.ts       CloakBrowser persistent context
 
-farmRunner.ts / farmOne.ts       operator CLIs (not LLM-driven)
+farmRunner.ts / farmOne.ts       operator CLIs
   farm/routing.ts                cluster-by-country router
   tools/battles.ts               campaign discovery + eligibility + empty check
   tools/farm.ts                  travel + inventory + deploy + verify
@@ -267,7 +256,7 @@ farmRunner.ts / farmOne.ts       operator CLIs (not LLM-driven)
 
 **Layering rule**: do not skip levels. Everything goes through `apiCall` so the allow-list always fires.
 
-**Memory-write rule**: only `agent/runner.ts` and `agent/tools.ts` mutate `DailyState`/`WeeklyState`. `tools/*.ts` are pure — they return results and never persist.
+**Memory-write rule**: only `agent/runner.ts` mutates `DailyState` / `WeeklyState`. `tools/*.ts` are pure — they return results and never persist.
 
 ---
 
@@ -277,7 +266,6 @@ farmRunner.ts / farmOne.ts       operator CLIs (not LLM-driven)
 - **Form bodies** are `application/x-www-form-urlencoded`. `apiCall()` automatically prepends `_token: csrf` and sets `X-Requested-With: XMLHttpRequest` on POSTs. Don't bypass it.
 - **CSRF is per-page, not per-session.** Each cycle re-reads it from the live page.
 - **Mission IDs**: 100001 = work, 100003 = train, 100011 = buy food. VIP claim is not exposed in `daily-missions-data` — its tool is the only writer for that flag.
-- **The agent's system prompt is a fixed-shape recipe**, not a free-form description. Each cycle injects the current pending list. Sweeping rewrites tend to break the short-circuit profile.
 - **`Referer` matters for deploys.** The farming CLIs `page.goto(/military/battlefield/{id})` before any deploy fetch because the browser-enforced `Referer` is what the deploy endpoints check.
 
 ---
@@ -286,9 +274,8 @@ farmRunner.ts / farmOne.ts       operator CLIs (not LLM-driven)
 
 - Node.js 22+, TypeScript, ESM (no build step — `tsx` runs sources directly)
 - [`cloakbrowser`](https://github.com/CloakHQ/CloakBrowser) — stealth Chromium with source-level fingerprint patches
-- `@anthropic-ai/claude-agent-sdk` — agent runtime + in-process MCP server
 - `playwright-core` — browser context API surface
-- `zod` — env, memory, tool input validation
+- `zod` — env, memory, input validation
 
 ## Disclaimer
 
