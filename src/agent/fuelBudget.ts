@@ -3,7 +3,16 @@ import { weekElapsedFraction } from '../erepublik/week.js';
 
 /** Weekly fuel budget — spread mode (D1-D3, level <70). See [[fuel-economy]]. */
 export const WEEKLY_BUDGET = 70;
-/** Q-1 no-weapon hits cost 33 energy each, two sides per battle. */
+/**
+ * Q-1 no-weapon hits cost 33 energy each, two sides per battle.
+ *
+ * NOTE: this constant is **Standard-strategy-specific**. D4-TW (Phase 5) and
+ * Maverick-D3-with-bombs (Phase 6) have very different per-battle energy
+ * profiles (≈2000–5000 and ≈0 respectively). Before those strategies merge,
+ * `decideFarming` must source this number from the active strategy
+ * (`estimateEnergyPerBattle()`) instead of using this constant. See
+ * `docs/superpowers/specs/2026-05-16-flexible-farming-config-design.md` §3.3.
+ */
 export const ENERGY_PER_BATTLE = 66;
 
 /** Soft cap on battles within a single farm session. */
