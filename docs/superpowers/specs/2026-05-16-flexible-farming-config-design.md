@@ -54,8 +54,13 @@ The player fights **one side only** — their citizenship country's side — in 
 **Discovery filter:** D4-TW does **not** reuse `listFarmableBattles` filtering as-is. The current helper restricts to `wall.dom === 50` (empty-domination signal); TW battles are usually not at 50/50, so we need a separate discovery path:
 
 - New `listMyCountryActiveBattles(countryId)` calls the same `/military/campaignsJson/list` endpoint, then filters to battles where `battle.invaderId === myCountryId` OR `battle.defenderId === myCountryId` AND `division_end === false`. No `wall.dom` filter — we accept battles at any dominance.
-- Player must already be in **any region of their citizenship country** — no traveling abroad to find TW battles. If currently abroad, skip the strategy this cycle (the `travelHome` path will return us; next cycle we're eligible).
-- Order candidates so that battles in the player's *current* native region come first (zero travel), then other native regions ranked by `findCheapestTravelRegion`.
+
+**No travel required.** Fighting for your own country only needs you to be in **any region** of that country — the battle's specific region is irrelevant. So:
+
+- If `ctx.currentCountryId === myCountryId` (we're somewhere at home): eligible to deploy on any of our country's battles. **Zero travel** between battles, regardless of which native region the battle is in.
+- If `ctx.currentCountryId !== myCountryId` (we're abroad after farming): skip D4-TW this cycle. The `travelHome` path will return us; next cycle we're eligible.
+
+This is different from Standard / Maverick-D3 which require physically traveling to each battle's region (since those involve foreign or empty-div battles). For D4-TW, the existing `findCheapestTravelRegion` / `ERP_FARM_MAX_TRAVEL_CC` plumbing is unused — discovery → empty-side check → deploy → next battle, no `battlefieldTravel` between them.
 
 **Empty-side check (new):** `isSideEmpty(battleId, division=4, side='invader'|'defender')` — `battle-stats` already returns per-side per-division stats; the existing `isBattleDivisionEmpty` checks both sides, we add a single-side variant. The "my side" is whichever side matches `myCountryId`.
 
@@ -74,7 +79,7 @@ The player fights **one side only** — their citizenship country's side — in 
 
 **Session cap:** `settings.d4tw.maxBattlesPerSession` (default 3, user-configurable). Tooltip in UI explains: "How many TW battles per cycle (~10 min). Higher = drain energy faster, hit all targets sooner. Default 3 is balanced."
 
-**Travel:** Within native country only. If the closest matching battle requires hopping between native regions, the existing `findCheapestTravelRegion` + `ERP_FARM_MAX_TRAVEL_CC` cap still applies.
+**Travel:** None within D4-TW — see the "No travel required" note above. Deploying on a native-country battle works from any region of that country.
 
 ### 2.3 Maverick-D3 (new, D4 native with Maverick)
 
