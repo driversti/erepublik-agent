@@ -68,10 +68,9 @@ const cleanupPid = (): void => {
   }
 };
 process.on('exit', cleanupPid);
-process.on('SIGINT', () => {
-  cleanupPid();
-  process.exit(130);
-});
+// SIGINT is handled by the existing graceful-shutdown handler later in this
+// file; it sets `stopping = true`, lets the current cycle finish, and exits
+// cleanly — at which point our `exit` listener above fires `cleanupPid()`.
 process.on('SIGTERM', () => {
   cleanupPid();
   process.exit(143);
