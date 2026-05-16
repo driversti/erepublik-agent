@@ -426,7 +426,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 const ctx = await openSession({ accountSlug: env.ERP_ACCOUNT_SLUG, headed: env.HEADED === 'true' });
-const notifier = new TelegramNotifier({ token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID });
+const notifier = new TelegramNotifier({
+  token: env.TELEGRAM_BOT_TOKEN,
+  chatId: env.TELEGRAM_CHAT_ID,
+  accountTag: env.ERP_ACCOUNT_SLUG,
+});
 
 if (env.ERP_CAPTCHA_PROVIDER !== 'none' && !env.ERP_CAPTCHA_API_KEY) {
   console.warn(
