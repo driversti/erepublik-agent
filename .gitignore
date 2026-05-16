@@ -6,4 +6,5 @@ sessions/
 .idea/
 .vscode/
 dist/
+.superpowers/
 
