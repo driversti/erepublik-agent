@@ -129,6 +129,20 @@ function bindControls() {
   const farm = document.getElementById('toggle-farmEnabled');
   if (paused) paused.addEventListener('change', (e) => scheduleSave((s) => (s.paused = e.target.checked)));
   if (farm) farm.addEventListener('change', (e) => scheduleSave((s) => (s.farmEnabled = e.target.checked)));
+  const mode = document.getElementById('mode-override');
+  if (mode) mode.addEventListener('change', (e) => scheduleSave((s) => (s.modeOverride = e.target.value || null)));
+  const maverick = document.getElementById('maverick-manual');
+  if (maverick)
+    maverick.addEventListener('change', (e) => {
+      const v = e.target.value;
+      scheduleSave((s) => (s.maverickManual = v === '' ? null : v === 'true'));
+    });
+  const att = document.getElementById('d4tw-attacker');
+  if (att) att.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.targetDamageAttacker = Number(e.target.value))));
+  const def = document.getElementById('d4tw-defender');
+  if (def) def.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.targetDamageDefender = Number(e.target.value))));
+  const maxB = document.getElementById('d4tw-maxBattles');
+  if (maxB) maxB.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.maxBattlesPerSession = Number(e.target.value))));
 }
 
 function renderSettingsForm(s) {
@@ -137,6 +151,20 @@ function renderSettingsForm(s) {
   const farm = document.getElementById('toggle-farmEnabled');
   if (paused && document.activeElement !== paused) paused.checked = !!s.paused;
   if (farm && document.activeElement !== farm) farm.checked = !!s.farmEnabled;
+  const mode = document.getElementById('mode-override');
+  if (mode && document.activeElement !== mode) mode.value = s.modeOverride ?? '';
+  const maverick = document.getElementById('maverick-manual');
+  if (maverick && document.activeElement !== maverick) {
+    maverick.value = s.maverickManual === null ? '' : String(s.maverickManual);
+  }
+  const att = document.getElementById('d4tw-attacker');
+  if (att && document.activeElement !== att) att.value = String(s.d4tw.targetDamageAttacker);
+  const def = document.getElementById('d4tw-defender');
+  if (def && document.activeElement !== def) def.value = String(s.d4tw.targetDamageDefender);
+  const maxB = document.getElementById('d4tw-maxBattles');
+  if (maxB && document.activeElement !== maxB) maxB.value = String(s.d4tw.maxBattlesPerSession);
+  const weapons = document.getElementById('d4tw-weapons');
+  if (weapons) weapons.textContent = JSON.stringify(s.d4tw.weaponPriority);
 }
 
 bindControls();

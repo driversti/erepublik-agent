@@ -27,6 +27,54 @@
       </div>
     </section>
 
+    <section class="bg-white rounded shadow p-4 md:col-span-2">
+      <h2 class="font-semibold mb-3">Farm strategy</h2>
+      <div class="flex flex-wrap items-center gap-3 mb-3">
+        <label class="flex items-center gap-2">
+          <span class="text-sm">Mode:</span>
+          <select id="mode-override" class="border rounded px-2 py-1 text-sm">
+            <option value="">Auto</option>
+            <option value="standard">Standard (D1-D3 empty-div)</option>
+            <option value="d4tw">D4-TW (native, hit to target)</option>
+            <option value="maverickD3">Maverick-D3 (D3 empty-div)</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2">
+          <span class="text-sm">Maverick override:</span>
+          <select id="maverick-manual" class="border rounded px-2 py-1 text-sm">
+            <option value="">Auto-detect</option>
+            <option value="true">YES</option>
+            <option value="false">NO</option>
+          </select>
+        </label>
+      </div>
+      <div class="bg-gray-50 rounded p-3 text-sm">
+        <div class="font-medium mb-2">D4-TW settings</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Target damage (attacker)</span>
+            <input id="d4tw-attacker" type="number" min="1" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Target damage (defender)</span>
+            <input id="d4tw-defender" type="number" min="1" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Max battles per session</span>
+            <input id="d4tw-maxBattles" type="number" min="1" max="10" class="border rounded px-2 py-1">
+          </label>
+          <div class="flex flex-col text-xs text-gray-500">
+            <span>Weapon priority (edit JSON to change)</span>
+            <code id="d4tw-weapons" class="bg-white border rounded px-2 py-1">—</code>
+          </div>
+        </div>
+        <p class="text-xs text-amber-800 bg-amber-50 rounded p-2 mt-2">
+          ⓘ "Max battles per session" caps how many TW battles the bot fights per cycle (~10 min).
+          For TW each battle is one big deploy of 1500–3000 energy — usually only one fits per full pool.
+        </p>
+      </div>
+    </section>
+
     <section class="bg-white rounded shadow p-4">
       <h2 class="font-semibold mb-2">Today's actions</h2>
       <ul id="daily-actions" class="text-sm space-y-1"></ul>
