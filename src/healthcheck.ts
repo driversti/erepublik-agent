@@ -1,7 +1,11 @@
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { launchPersistentContext } from 'cloakbrowser';
-import { resolve } from 'node:path';
+import { configDir, profileDir } from './paths.js';
+
+loadDotenv({ path: join(configDir(), '.env') });
+loadDotenv();
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -9,12 +13,12 @@ const Env = z.object({
 });
 
 const env = Env.parse(process.env);
-const profileDir = resolve(`sessions/profile/${env.ERP_ACCOUNT_SLUG}`);
+const resolvedProfileDir = profileDir(env.ERP_ACCOUNT_SLUG);
 
-console.log(`[healthcheck] profile dir: ${profileDir}`);
+console.log(`[healthcheck] profile dir: ${resolvedProfileDir}`);
 
 const ctx = await launchPersistentContext({
-  userDataDir: profileDir,
+  userDataDir: resolvedProfileDir,
   headless: env.HEADED === 'false',
   viewport: { width: 1366, height: 800 },
 });
