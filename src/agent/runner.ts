@@ -171,6 +171,7 @@ async function runCycle(
   uiSnapshot.lastCycleStartedAt = new Date().toISOString();
   uiSnapshot.day = day;
   let lastDecisionReason: string | null = null;
+  let lastWeekFuelTarget = 0;
   const { state, rolledOver } = loadOrInit(day);
   const weekly = loadWeekly();
   const { state: fuel, rolledOver: fuelRolled } = loadFuel();
@@ -350,6 +351,7 @@ async function runCycle(
           },
         };
     lastDecisionReason = decision.reason;
+    lastWeekFuelTarget = Math.floor(70 * decision.diagnostics.weekFraction);
     console.log(
       `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
         `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
@@ -459,7 +461,7 @@ async function runCycle(
   uiSnapshot.weeklyFuel = {
     week: fuel.week,
     spent: fuel.spent,
-    target: 0,
+    target: lastWeekFuelTarget,
     hitsLanded: fuel.hitsLanded,
     cyclesSkipped: fuel.cyclesSkipped,
   };

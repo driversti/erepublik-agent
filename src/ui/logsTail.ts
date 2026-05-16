@@ -19,9 +19,12 @@ export function tailLog(lines: number): string[] {
   const stats = statSync(path);
   const maxBytes = 256 * 1024;
   const start = Math.max(0, stats.size - maxBytes);
-  const buf = readFileSync(path, { encoding: 'utf8' });
-  const tail = start === 0 ? buf : buf.slice(start);
-  const all = tail.split('\n');
+  // Slice as bytes BEFORE decoding — `stats.size` is bytes but a decoded UTF-8
+  // string indexes in UTF-16 code units. Emoji in our logs (✅ ⏳ 🏠 ❌) would
+  // misalign the slice and chop mid-codepoint if we sliced after decoding.
+  const raw = readFileSync(path);
+  const tail = start === 0 ? raw : raw.subarray(start);
+  const all = tail.toString('utf8').split('\n');
   // Drop the (likely truncated) first line if we sliced mid-file.
   const safe = start === 0 ? all : all.slice(1);
   return safe.slice(-lines);
