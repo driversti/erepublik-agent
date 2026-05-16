@@ -104,7 +104,20 @@ Same shape as Standard, but the division is forced to 3 instead of the player's 
 
 ### 2.4 Damage formula
 
-Per [[Military_Formulas]] (KB):
+**Hybrid strategy: prefer in-page game JS, fall back to our formula.**
+
+The eRepublik battlefield page (`/military/battlefield/{id}`) computes the "expected damage" preview that appears when the user moves the energy slider. We piggyback on that calculation rather than reimplementing it — the game's function already includes natural-enemy bonus, active boosters, terrain modifiers, and any modifiers we don't yet know about.
+
+**Primary path:** when on the battlefield page, `page.evaluate()` calls the game's damage function. Exact symbol is TBD during Phase 5 (DevTools probe — candidate names: `SERVER_DATA.battle.weaponDamage`, `Battle.calculateDamage`, `erepublik.battle.calcDamage`). The wrapper signature:
+
+```typescript
+async function damagePerHitFromGame(
+  page: Page,
+  weaponQuality: number,
+): Promise<number | null>; // null = function not found / threw
+```
+
+**Fallback path:** if the primary returns `null`, use our formula in `src/tools/damageFormula.ts`:
 
 ```
 D = 10 × (1 + S/400) × (1 + R/5) × (1 + FP/100)
@@ -124,7 +137,9 @@ Other useful fields from same endpoint:
 - `military.militaryData.divisionData.bazookaBoosterDamage` — bazooka damage in current division
 - `military.militaryData.ground.*` mirrors top-level — for ground weapons specifically (use this; `aircraft.*` is for air-mode which is out of scope)
 
-Implementation: `damagePerHit(s, r, fp): number` — pure function in `src/tools/damageFormula.ts`. Excludes natural-enemy, boosters, terrain (we don't auto-use boosters per user decision; the user's stated 130M/220M targets already include a safety margin for TW resistance).
+**When fallback fires, send a Telegram alert** (`"⚠️ damage-per-hit: in-game JS not available, falling back to formula — game may have updated. Source: {error}"`). The fallback is intentionally less accurate (no NE/booster/terrain), but the user's stated 130M/220M targets carry a safety margin large enough that fallback won't break TW outcomes — just makes us spend slightly more energy than strictly necessary.
+
+Both paths return a single number: `damagePerHit` for the chosen weapon, already scaled to the current battle context.
 
 ### 2.5 Weapon priority lists
 
@@ -341,6 +356,7 @@ No new endpoints for D4-TW deploys themselves — `battle-stats`, `battlefieldTr
 | 4 | Mid-fight contested-side handling | Default: check only at start; if contested mid-fight, alert via Telegram and continue. Revisit if alerts get noisy. |
 | 5 | UI port-collision behavior | Try 3737..3747 sequentially, log final port. No env var override in v1. |
 | 6 | Whitelist countries for D4-TW | Out of v1; can be added in `settings.d4tw.blockedCountries: number[]` later. |
+| 7 | In-page damage function symbol name | Phase 5 DevTools probe on a battlefield page: walk `SERVER_DATA`, `erepublik`, `Battle`, window scope for functions whose output matches the slider's "expected damage" UI value. Wrap discovered call in `damagePerHitFromGame()` with try/catch. |
 
 ---
 
