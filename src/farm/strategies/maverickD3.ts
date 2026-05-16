@@ -190,6 +190,7 @@ async function farmBothSides(
   secondTravel: TravelOption,
   cfg: ReturnType<typeof resolveOpts>,
   bomb: { quality: 21 | 22; amount: number } | null,
+  useBombs: boolean,
 ): Promise<{ first: SideOutcome; second: SideOutcome; poolEnergyAfter: number | null }> {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   await page.goto(`https://www.erepublik.com/en/military/battlefield/${target.battleId}`, {
@@ -220,7 +221,7 @@ async function farmBothSides(
   const skinA = invA.skinId ?? defaultSkin;
 
   let resA: SideOutcome;
-  if (bomb && loadSettings().emptyDiv.foreignWeaponPolicy === 'bomb-then-bazooka') {
+  if (bomb && useBombs) {
     // Bomb deploy: pass quality 21/22, energy = BOMB_ENERGY (11)
     const r = await deployWeapon(
       ctx,
@@ -322,7 +323,7 @@ async function farmBothSides(
   const skinB = invB.skinId ?? defaultSkin;
   let resB: SideOutcome;
   try {
-    if (bomb && loadSettings().emptyDiv.foreignWeaponPolicy === 'bomb-then-bazooka') {
+    if (bomb && useBombs) {
       // Bomb deploy for side B
       const r = await deployWeapon(
         ctx,
@@ -387,6 +388,20 @@ async function runMaverickD3(
   options: FarmSessionOptions,
 ): Promise<FarmSessionResult> {
   const cfg = resolveOpts(options);
+  // Read settings once per session; pass derived values into farmBothSides
+  // so we don't re-read disk per battle (one fewer race window mid-session).
+  const settings = loadSettings();
+  const useBombs = settings.emptyDiv.foreignWeaponPolicy === 'bomb-then-bazooka';
+
+  // Belt-and-suspenders: dispatcher already routes via effectiveMode, but if
+  // the operator forces this strategy via modeOverride on a non-Maverick
+  // account, warn so silent skips don't look like bugs.
+  if (info.hasMaverick !== true && settings.maverickManual !== true) {
+    console.warn(
+      '[maverickD3] warning: hasMaverick=false and maverickManual not set — ' +
+        'D3 deploys will likely be rejected server-side. Forcing via override.',
+    );
+  }
 
   // Load inventory once at session start to pick the best bomb available.
   const inventory = await loadInventory(ctx, info.csrf);
@@ -520,7 +535,7 @@ async function runMaverickD3(
 
     console.log(header);
     try {
-      const out = await farmBothSides(ctx, info, c, ordered, firstTravel, secondTravel, cfg, bomb);
+      const out = await farmBothSides(ctx, info, c, ordered, firstTravel, secondTravel, cfg, bomb, useBombs);
       const fuelLine = out.second.fuelLeft ?? out.first.fuelLeft;
       if (fuelLine != null) lastFuel = fuelLine;
       if (out.poolEnergyAfter != null) lastPoolEnergy = out.poolEnergyAfter;
