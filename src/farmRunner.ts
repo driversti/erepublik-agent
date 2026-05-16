@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { z } from 'zod';
 import { openSession, extractCitizenContext } from './browser/session.js';
-import { runFarmSession } from './farm/session.js';
+import { getStrategy } from './farm/strategies/index.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -43,7 +43,7 @@ try {
       `energy=${raw.energy}/${raw.energyPoolLimit} fuel=${raw.fuelLeft}/${raw.maxFuel}`,
   );
 
-  const result = await runFarmSession(
+  const result = await getStrategy('standard').run(
     ctx,
     {
       csrf: raw.csrf,
