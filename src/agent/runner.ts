@@ -1,4 +1,12 @@
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+import { join } from 'node:path';
+import { configDir } from '../paths.js';
+
+loadDotenv({ path: join(configDir(), '.env') });
+// Fall back to default .env in cwd if config/.env wasn't found
+// (developer workflow). Dotenv silently ignores missing files.
+loadDotenv();
+
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BrowserContext } from 'playwright-core';

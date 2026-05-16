@@ -1,19 +1,19 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, renameSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { sessionsDir } from '../paths.js';
 import { DailyState, emptyState } from './schema.js';
 
-const SESSIONS_DIR = resolve('sessions');
-
 function ensureDir(): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
+  // sessionsDir() already mkdirs.
+  sessionsDir();
 }
 
 function filePath(day: number): string {
-  return join(SESSIONS_DIR, `daily-state-${day}.json`);
+  return join(sessionsDir(), `daily-state-${day}.json`);
 }
 
 function archivePath(day: number): string {
-  return join(SESSIONS_DIR, `daily-state-${day}.archive.json`);
+  return join(sessionsDir(), `daily-state-${day}.archive.json`);
 }
 
 export interface LoadResult {
@@ -32,11 +32,11 @@ export function loadOrInit(currentDay: number): LoadResult {
 
   // Archive any stale daily-state-*.json files (different day)
   let rolledOver = false;
-  for (const entry of readdirSync(SESSIONS_DIR)) {
+  for (const entry of readdirSync(sessionsDir())) {
     const m = entry.match(/^daily-state-(\d+)\.json$/);
     if (m && Number(m[1]) !== currentDay) {
       const prev = Number(m[1]);
-      renameSync(join(SESSIONS_DIR, entry), archivePath(prev));
+      renameSync(join(sessionsDir(), entry), archivePath(prev));
       rolledOver = true;
     }
   }

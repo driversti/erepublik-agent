@@ -1,7 +1,6 @@
 import { launchPersistentContext } from 'cloakbrowser';
 import type { BrowserContext } from 'playwright-core';
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { profileDir as resolveProfileDir } from '../paths.js';
 
 export interface SessionOptions {
   accountSlug: string;
@@ -9,8 +8,7 @@ export interface SessionOptions {
 }
 
 export async function openSession(opts: SessionOptions): Promise<BrowserContext> {
-  const profileDir = resolve(`sessions/profile/${opts.accountSlug}`);
-  mkdirSync(profileDir, { recursive: true });
+  const profileDir = resolveProfileDir(opts.accountSlug);
   return launchPersistentContext({
     userDataDir: profileDir,
     headless: !opts.headed,
