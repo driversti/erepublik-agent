@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BrowserContext } from 'playwright-core';
 import { openSession, extractCitizenContext } from '../browser/session.js';
+import { effectiveMode } from './modeSelector.js';
 import { eRepublikDay } from '../erepublik/day.js';
 import { loadOrInit, save } from '../memory/dailyState.js';
 import { allSafeDailyDone, pendingActions, type DailyState } from '../memory/schema.js';
@@ -182,12 +183,6 @@ async function runCycle(
   );
 
   const settings = loadSettings();
-  if (settings.modeOverride != null && settings.modeOverride !== 'standard') {
-    console.warn(
-      `[cycle] settings.modeOverride="${settings.modeOverride}" is set but not yet implemented — ` +
-        `the runner will still use the 'standard' strategy. Phase 5/6 will wire d4tw / maverickD3.`,
-    );
-  }
   if (settings.paused) {
     uiSnapshot.lastUpdatedAt = Date.now();
     uiSnapshot.settings = settings;
@@ -372,7 +367,12 @@ async function runCycle(
     ) {
       const residenceCountryId = ctxInfo.residenceCountryId ?? countryId;
       try {
-        const result = await getStrategy('standard').run(
+        const mode = effectiveMode(
+          { modeOverride: settings.modeOverride, maverickManual: settings.maverickManual },
+          { division: ctxInfo.division, hasMaverick: ctxInfo.hasMaverick },
+        );
+        console.log(`[cycle] strategy: ${mode}`);
+        const result = await getStrategy(mode).run(
           ctx,
           {
             csrf,
