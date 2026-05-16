@@ -10,13 +10,19 @@ interface ApiResponse {
   countries: Record<string, { id: number; name: string }>;
 }
 
-const URL = 'https://www.erepublik.com/en/military/campaignsJson/list';
+const CAMPAIGNS_URL = 'https://www.erepublik.com/en/military/campaignsJson/list';
 const COMMITTED_PATH = resolve('data/countries.json');
 
 async function main(): Promise<void> {
-  const response = await fetch(URL);
+  let response: Response;
+  try {
+    response = await fetch(CAMPAIGNS_URL);
+  } catch (err) {
+    console.error(`Network error fetching ${CAMPAIGNS_URL}: ${(err as Error).message}`);
+    process.exit(2);
+  }
   if (!response.ok) {
-    console.error(`Failed to fetch ${URL}: HTTP ${response.status}`);
+    console.error(`Failed to fetch ${CAMPAIGNS_URL}: HTTP ${response.status}`);
     process.exit(2);
   }
 

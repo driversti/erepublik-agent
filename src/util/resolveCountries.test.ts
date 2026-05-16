@@ -60,6 +60,11 @@ describe('resolveCountries', () => {
     expect(r.ids).toEqual([35]);
   });
 
+  it('dedupes repeated numeric IDs', () => {
+    const r = resolveCountries('27, 27', catalog);
+    expect(r.ids).toEqual([27]);
+  });
+
   it('reports unknown tokens with a suggestion when close', () => {
     const r = resolveCountries('Polnd', catalog);
     expect(r.ids).toEqual([]);
