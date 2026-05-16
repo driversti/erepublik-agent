@@ -11,6 +11,19 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
+// Escape strings before interpolating into innerHTML templates. Both the
+// status grid and the history list mix server-sourced strings (region names,
+// error messages) with HTML — without this, a malicious or malformed payload
+// could inject markup.
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setBar(textId, barId, current, max) {
   if (current == null || max == null || max <= 0) {
     setText(textId, '—');
@@ -49,7 +62,7 @@ function renderStatus(s) {
     ['Last error', s.lastError ?? '—'],
   ];
   grid.innerHTML = rows
-    .map(([k, v]) => `<dt class="text-gray-500">${k}</dt><dd>${v}</dd>`)
+    .map(([k, v]) => `<dt class="text-gray-500">${esc(k)}</dt><dd>${esc(v)}</dd>`)
     .join('');
 
   setBar('energy-text', 'energy-bar', s.citizen.energy, s.citizen.energyPoolLimit);
@@ -87,13 +100,13 @@ async function refresh() {
       .map((e) => {
         const ts = e.at ? new Date(e.at).toLocaleTimeString() : '—';
         let summary;
-        if (e.type === 'cycle') summary = `cycle: ${e.reason}`;
-        else if (e.type === 'battle') summary = `🎯 battle ${e.battleId} (${e.regionName}) [${e.mode}]`;
-        else if (e.type === 'mode') summary = `mode: ${e.from} → ${e.to}`;
+        if (e.type === 'cycle') summary = `cycle: ${esc(e.reason)}`;
+        else if (e.type === 'battle') summary = `🎯 battle ${esc(e.battleId)} (${esc(e.regionName)}) [${esc(e.mode)}]`;
+        else if (e.type === 'mode') summary = `mode: ${esc(e.from)} → ${esc(e.to)}`;
         else if (e.type === 'pause') summary = `pause: ${e.paused ? 'on' : 'off'}`;
-        else if (e.type === 'error') summary = `❌ ${e.message}`;
-        else summary = JSON.stringify(e);
-        return `<li><span class="text-gray-400 mr-2">${ts}</span>${summary}</li>`;
+        else if (e.type === 'error') summary = `❌ ${esc(e.message)}`;
+        else summary = esc(JSON.stringify(e));
+        return `<li><span class="text-gray-400 mr-2">${esc(ts)}</span>${summary}</li>`;
       })
       .join('') || '<li class="text-gray-400">(no events yet)</li>';
   } catch (err) {
