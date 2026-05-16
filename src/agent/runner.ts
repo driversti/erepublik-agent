@@ -315,11 +315,24 @@ async function runCycle(
 
     // ── Farm gate ─────────────────────────────────────────────────────────────
     const fuelAtCycleStart = ctxInfo.fuelLeft ?? 0;
-    const decision = decideFarming({
-      weekly: fuel,
-      poolEnergy: ctxInfo.energy ?? 0,
-      fuelInInventory: fuelAtCycleStart,
-    });
+    const decision = settings.farmEnabled
+      ? decideFarming({
+          weekly: fuel,
+          poolEnergy: ctxInfo.energy ?? 0,
+          fuelInInventory: fuelAtCycleStart,
+        })
+      : {
+          shouldFarm: false,
+          reason: 'disabled via settings.farmEnabled',
+          battlesThisSession: 0,
+          diagnostics: {
+            target: 0,
+            spent: fuel.spent,
+            ahead: 0,
+            remaining: 0,
+            weekFraction: 0,
+          },
+        };
     console.log(
       `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
         `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
