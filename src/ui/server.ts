@@ -116,7 +116,9 @@ export async function startUiServer(opts: StartOptions): Promise<ServerHandle> {
   let chosenPort: number | null = null;
   if (opts.port != null) {
     await listen(server, opts.port, host);
-    chosenPort = opts.port;
+    // When port is 0, Node.js auto-assigns a free port; fetch the actual port from server.address()
+    const addr = server.address();
+    chosenPort = typeof addr === 'object' && addr !== null ? addr.port : opts.port;
   } else {
     let lastError: unknown = null;
     for (let p = PORT_RANGE.start; p <= PORT_RANGE.end; p++) {
