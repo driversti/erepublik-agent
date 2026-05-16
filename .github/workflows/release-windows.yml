@@ -33,8 +33,11 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v', ''
-          if (-not $version) { $version = "0.0.0-dev" }
+          if ($tag -match '^v\d') {
+            $version = $tag -replace '^v', ''
+          } else {
+            $version = "0.0.0-dev"
+          }
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Download portable Node 22
