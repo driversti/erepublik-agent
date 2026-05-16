@@ -1,10 +1,17 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { dataDir } from '../paths.js';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { resolveCountries, type Country } from './resolveCountries.js';
 
+// Resolve countries.json relative to this script's own location so it works
+// in both dev (src/util/ → ../../data) and in the Windows ZIP layout
+// (app/dist/util/ → ../../data → app/data). Does NOT depend on ERP_ROOT,
+// which is not set during setup.bat's blocked-countries prompt.
+const here = dirname(fileURLToPath(import.meta.url));
+const catalogPath = join(here, '..', '..', 'data', 'countries.json');
+
 const args = process.argv.slice(2);
-const catalog = JSON.parse(readFileSync(join(dataDir(), 'countries.json'), 'utf8')) as Country[];
+const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as Country[];
 
 if (args[0] === '--list') {
   // Print the catalog in three columns sorted by name, with IDs aligned.
