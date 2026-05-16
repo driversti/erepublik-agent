@@ -78,6 +78,7 @@ async function refresh() {
     status.settings = settings;
     renderStatus(status);
     document.getElementById('settings-json').textContent = JSON.stringify(settings, null, 2);
+    renderSettingsForm(settings);
     document.getElementById('logs').textContent = (logs.lines ?? []).join('\n') || '(no log file yet)';
   } catch (err) {
     document.getElementById('last-updated').textContent = `error: ${err.message}`;
@@ -86,3 +87,56 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, POLL_MS);
+
+let lastSettings = null;
+let saveDebounceTimer = null;
+
+function setSaveIndicator(text, color) {
+  const el = document.getElementById('save-indicator');
+  if (!el) return;
+  el.textContent = text;
+  el.className = `text-xs ${color}`;
+}
+
+async function putSettings(next) {
+  setSaveIndicator('saving…', 'text-gray-500');
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 100)}`);
+    lastSettings = await r.json();
+    setSaveIndicator('saved ✓', 'text-emerald-600');
+    setTimeout(() => setSaveIndicator('—', 'text-gray-400'), 1500);
+  } catch (err) {
+    setSaveIndicator(`error: ${err.message}`, 'text-red-600');
+  }
+}
+
+function scheduleSave(mutator) {
+  if (!lastSettings) return;
+  const next = JSON.parse(JSON.stringify(lastSettings));
+  mutator(next);
+  lastSettings = next;
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => putSettings(next), 300);
+}
+
+function bindControls() {
+  const paused = document.getElementById('toggle-paused');
+  const farm = document.getElementById('toggle-farmEnabled');
+  if (paused) paused.addEventListener('change', (e) => scheduleSave((s) => (s.paused = e.target.checked)));
+  if (farm) farm.addEventListener('change', (e) => scheduleSave((s) => (s.farmEnabled = e.target.checked)));
+}
+
+function renderSettingsForm(s) {
+  lastSettings = s;
+  const paused = document.getElementById('toggle-paused');
+  const farm = document.getElementById('toggle-farmEnabled');
+  if (paused && document.activeElement !== paused) paused.checked = !!s.paused;
+  if (farm && document.activeElement !== farm) farm.checked = !!s.farmEnabled;
+}
+
+bindControls();

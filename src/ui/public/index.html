@@ -33,8 +33,24 @@
     </section>
 
     <section class="bg-white rounded shadow p-4 md:col-span-2">
-      <h2 class="font-semibold mb-2">Settings (read-only in this phase)</h2>
-      <pre id="settings-json" class="text-xs bg-gray-50 p-3 rounded overflow-x-auto">loading…</pre>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold">Settings</h2>
+        <span id="save-indicator" class="text-xs text-gray-400">—</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input id="toggle-paused" type="checkbox" class="h-4 w-4">
+          <span>Pause bot (skips entire cycle)</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input id="toggle-farmEnabled" type="checkbox" class="h-4 w-4">
+          <span>Farm enabled (skip farm gate when off)</span>
+        </label>
+      </div>
+      <details class="mt-4">
+        <summary class="text-xs text-gray-500 cursor-pointer">Raw JSON</summary>
+        <pre id="settings-json" class="text-xs bg-gray-50 p-3 rounded overflow-x-auto mt-2">loading…</pre>
+      </details>
     </section>
 
     <section class="bg-white rounded shadow p-4 md:col-span-2">
