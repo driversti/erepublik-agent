@@ -17,6 +17,7 @@
     "debug-headers": "tsx src/debugHeaders.ts",
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
