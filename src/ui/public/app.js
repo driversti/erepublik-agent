@@ -80,6 +80,22 @@ async function refresh() {
     document.getElementById('settings-json').textContent = JSON.stringify(settings, null, 2);
     renderSettingsForm(settings);
     document.getElementById('logs').textContent = (logs.lines ?? []).join('\n') || '(no log file yet)';
+
+    const hist = await fetchJson('/api/history?lines=20');
+    const events = (hist.events ?? []).slice().reverse(); // newest first
+    document.getElementById('history-list').innerHTML = events
+      .map((e) => {
+        const ts = e.at ? new Date(e.at).toLocaleTimeString() : '—';
+        let summary;
+        if (e.type === 'cycle') summary = `cycle: ${e.reason}`;
+        else if (e.type === 'battle') summary = `🎯 battle ${e.battleId} (${e.regionName}) [${e.mode}]`;
+        else if (e.type === 'mode') summary = `mode: ${e.from} → ${e.to}`;
+        else if (e.type === 'pause') summary = `pause: ${e.paused ? 'on' : 'off'}`;
+        else if (e.type === 'error') summary = `❌ ${e.message}`;
+        else summary = JSON.stringify(e);
+        return `<li><span class="text-gray-400 mr-2">${ts}</span>${summary}</li>`;
+      })
+      .join('') || '<li class="text-gray-400">(no events yet)</li>';
   } catch (err) {
     document.getElementById('last-updated').textContent = `error: ${err.message}`;
   }
