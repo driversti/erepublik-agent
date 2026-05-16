@@ -34,6 +34,7 @@ import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js'
 import { travelHome } from '../tools/travel.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
+import { sleepUntilWake } from '../ui/sleepUntilWake.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -493,10 +494,6 @@ async function runCycle(
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 const uiSnapshot = createSnapshot();
 const uiServer = await startUiServer({ getSnapshot: () => uiSnapshot });
 console.log(`[runner] UI available at http://localhost:${uiServer.port}`);
@@ -538,8 +535,9 @@ try {
       uiSnapshot.lastError = message;
     }
     if (ONCE || stopping) break;
-    console.log(`[runner] sleeping ${env.LOOP_INTERVAL_MS / 1000}s`);
-    await sleep(env.LOOP_INTERVAL_MS);
+    console.log(`[runner] sleeping ${env.LOOP_INTERVAL_MS / 1000}s (wake on settings change)`);
+    const reason = await sleepUntilWake(env.LOOP_INTERVAL_MS, join(configDir(), 'settings.json'));
+    if (reason === 'file-changed') console.log('[runner] woken early — settings.json changed');
   } while (!stopping);
 } finally {
   await uiServer.close();
