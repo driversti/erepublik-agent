@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>erepublik-agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans">
+  <header class="bg-gray-900 text-white px-4 py-3 flex items-center gap-3">
+    <span class="font-semibold text-lg">erepublik-agent</span>
+    <span id="status-pill" class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700">loading…</span>
+    <span class="ml-auto text-xs opacity-70" id="last-updated">—</span>
+  </header>
+
+  <main class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+    <section class="bg-white rounded shadow p-4">
+      <h2 class="font-semibold mb-2">Live status</h2>
+      <dl id="status-grid" class="text-sm grid grid-cols-2 gap-x-4 gap-y-1"></dl>
+      <div class="mt-3">
+        <div class="flex justify-between text-xs text-gray-500"><span>Energy</span><span id="energy-text">—</span></div>
+        <div class="h-1.5 bg-gray-200 rounded"><div id="energy-bar" class="h-full bg-blue-500 rounded" style="width: 0%"></div></div>
+      </div>
+      <div class="mt-2">
+        <div class="flex justify-between text-xs text-gray-500"><span>Fuel barrels</span><span id="fuel-text">—</span></div>
+        <div class="h-1.5 bg-gray-200 rounded"><div id="fuel-bar" class="h-full bg-amber-500 rounded" style="width: 0%"></div></div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded shadow p-4">
+      <h2 class="font-semibold mb-2">Today's actions</h2>
+      <ul id="daily-actions" class="text-sm space-y-1"></ul>
+    </section>
+
+    <section class="bg-white rounded shadow p-4 md:col-span-2">
+      <h2 class="font-semibold mb-2">Settings (read-only in this phase)</h2>
+      <pre id="settings-json" class="text-xs bg-gray-50 p-3 rounded overflow-x-auto">loading…</pre>
+    </section>
+
+    <section class="bg-white rounded shadow p-4 md:col-span-2">
+      <h2 class="font-semibold mb-2">Live logs (last 100 lines)</h2>
+      <pre id="logs" class="text-xs bg-gray-50 p-3 rounded h-48 overflow-y-auto font-mono">—</pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
