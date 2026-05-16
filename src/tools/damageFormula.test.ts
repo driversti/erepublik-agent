@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { damagePerHit, FIREPOWER } from './damageFormula.js';
 
 describe('damagePerHit', () => {
-  it('returns 10 for a Recruit (S=0, R=1) bare-handed', () => {
+  it('returns 12 for a Recruit (S=0, R=1) bare-handed', () => {
     // D = 10 * (1 + 0/400) * (1 + 1/5) * (1 + 0/100)
     //   = 10 * 1 * 1.2 * 1 = 12
     expect(damagePerHit(0, 1, FIREPOWER.bare)).toBeCloseTo(12, 5);

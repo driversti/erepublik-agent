@@ -75,6 +75,11 @@ async function runD4TW(
   info: FarmSessionInfo,
   options: FarmSessionOptions,
 ): Promise<FarmSessionResult> {
+  // Re-read settings inside the strategy (vs accepting them via options).
+  // Tiny duplication vs the read in runCycle, but keeps the strategy
+  // self-contained: callers don't need to know d4tw's config schema.
+  // The race window (settings change between runCycle.loadSettings and here)
+  // is ~ms and harmless — the next cycle picks up any drift.
   const settings = loadSettings();
   const cfg = settings.d4tw;
 
@@ -156,6 +161,16 @@ async function runD4TW(
     // Energy + ammo pre-check
     const hitsNeeded = Math.ceil(targetDmg / dmgPerHit);
     const energyToSpend = Math.max(hitsNeeded * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
+
+    // Battlefield page navigation is REQUIRED before any deploy fetch — the
+    // deploy endpoints check the browser-enforced Referer header, which only
+    // gets set correctly when the page actually navigated there. Skipping
+    // this causes 403/error on getDeployInventory and deployWeapon.
+    // (See CLAUDE.md "Battlefield deploys need a real page navigation first".)
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    await page.goto(`https://www.erepublik.com/en/military/battlefield/${battle.battleId}`, {
+      waitUntil: 'domcontentloaded',
+    });
 
     // Get fresh pool energy + skin
     const inv = await getDeployInventory(
