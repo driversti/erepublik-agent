@@ -1,0 +1,99 @@
+name: Release (Windows portable)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install all dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          if (-not $version) { $version = "0.0.0-dev" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Download portable Node 22
+        shell: pwsh
+        run: |
+          $url = "https://nodejs.org/dist/v22.11.0/node-v22.11.0-win-x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile node-portable.zip
+          Expand-Archive -Path node-portable.zip -DestinationPath node-portable
+          $nodeDir = (Get-ChildItem node-portable | Where-Object { $_.PSIsContainer } | Select-Object -First 1).FullName
+          New-Item -ItemType Directory -Path staging\node | Out-Null
+          Copy-Item "$nodeDir\node.exe" -Destination staging\node\
+
+      - name: Stage compiled app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging\app -Force | Out-Null
+          Copy-Item -Recurse dist staging\app\dist
+          New-Item -ItemType Directory -Path staging\app\data -Force | Out-Null
+          Copy-Item data\countries.json staging\app\data\
+          Copy-Item package.json staging\app\
+          Copy-Item package-lock.json staging\app\
+
+      - name: Install production dependencies into staging
+        shell: pwsh
+        working-directory: staging\app
+        run: npm ci --omit=dev
+
+      - name: Stage Windows launcher files and empty dirs
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse windows\* staging\
+          New-Item -ItemType Directory -Path staging\chromium-cache -Force | Out-Null
+          New-Item -ItemType Directory -Path staging\sessions -Force | Out-Null
+          New-Item -ItemType Directory -Path staging\logs -Force | Out-Null
+          New-Item -ItemType Directory -Path staging\config -Force | Out-Null
+          New-Item -ItemType File -Path staging\chromium-cache\.gitkeep -Force | Out-Null
+          New-Item -ItemType File -Path staging\sessions\.gitkeep -Force | Out-Null
+          New-Item -ItemType File -Path staging\logs\.gitkeep -Force | Out-Null
+          New-Item -ItemType File -Path staging\config\.gitkeep -Force | Out-Null
+          Set-Content -Path staging\app\VERSION -Value "${{ steps.version.outputs.version }}"
+
+      - name: Create release ZIP
+        shell: pwsh
+        run: |
+          $zipName = "erepublik-agent-v${{ steps.version.outputs.version }}-windows-x64.zip"
+          # Compress the *contents* of staging\ under a top-level "erepublik-agent\" folder.
+          Rename-Item staging "erepublik-agent"
+          Compress-Archive -Path "erepublik-agent" -DestinationPath $zipName
+          "zip=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload artifact (for workflow_dispatch runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: erepublik-agent-windows
+          path: ${{ env.zip }}
+
+      - name: Publish to GitHub Release (tag runs only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.zip }}
+          generate_release_notes: true
