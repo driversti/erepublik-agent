@@ -287,7 +287,7 @@ async function runCycle(
             residenceRegionId: ctxInfo.residenceRegionId,
             residenceCountryId,
           },
-          { maxBattles: decision.battlesThisSession },
+          { maxBattles: decision.battlesThisSession, notify: (m) => notifier.send(m) },
         );
         const fuelAfter = result.fuelLeftAtEnd ?? fuelAtCycleStart;
         const consumed = Math.max(0, fuelAtCycleStart - fuelAfter);

@@ -48,6 +48,11 @@ export interface FarmSessionOptions {
   maxAttempts?: number;
   retryDelayMs?: number;
   handoffSleepMs?: number;
+  /** Retry budget for the side-B travel hop (medal-critical). */
+  travelBRetryAttempts?: number;
+  travelBRetryDelayMs?: number;
+  /** Optional notifier — invoked on partial-battle (side A landed, side B failed). */
+  notify?: (msg: string) => void | Promise<void>;
 }
 
 export interface SideOutcome {
@@ -110,6 +115,28 @@ export class EnergyExhaustedError extends Error {
   }
 }
 
+/**
+ * Thrown when side A hit was already committed (deploy returned, fuel barrel
+ * spent) but side B failed — travel exhausted retries, deploy threw, or pool
+ * went empty. The medal on side B is forfeit; the caller should alert the
+ * operator so they can finish the battle manually.
+ */
+export class PartialBattleError extends Error {
+  constructor(
+    public readonly battleId: number,
+    public readonly regionName: string,
+    public readonly sideA: SideOutcome,
+    public readonly stage: 'travel-b' | 'deploy-b',
+    public readonly cause: Error,
+  ) {
+    super(
+      `Partial battle ${battleId} (${regionName}): side A (${sideA.side}) landed ` +
+        `(verified=${sideA.verified}), side B failed at ${stage}: ${cause.message}`,
+    );
+    this.name = 'PartialBattleError';
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -131,6 +158,8 @@ const DEFAULTS = {
   maxAttempts: 10,
   retryDelayMs: 500,
   handoffSleepMs: 2000,
+  travelBRetryAttempts: 3,
+  travelBRetryDelayMs: 1500,
 };
 
 function envNum(key: string, fallback: number): number {
@@ -155,6 +184,11 @@ function resolveOpts(opts: FarmSessionOptions) {
     maxAttempts: opts.maxAttempts ?? envNum('ERP_FARM_MAX_ATTEMPTS', DEFAULTS.maxAttempts),
     retryDelayMs: opts.retryDelayMs ?? envNum('ERP_FARM_RETRY_DELAY_MS', DEFAULTS.retryDelayMs),
     handoffSleepMs: opts.handoffSleepMs ?? envNum('ERP_FARM_HANDOFF_SLEEP_MS', DEFAULTS.handoffSleepMs),
+    travelBRetryAttempts:
+      opts.travelBRetryAttempts ?? envNum('ERP_FARM_TRAVEL_B_RETRY_ATTEMPTS', DEFAULTS.travelBRetryAttempts),
+    travelBRetryDelayMs:
+      opts.travelBRetryDelayMs ?? envNum('ERP_FARM_TRAVEL_B_RETRY_DELAY_MS', DEFAULTS.travelBRetryDelayMs),
+    notify: opts.notify,
   };
 }
 
@@ -271,28 +305,54 @@ async function farmBothSides(
   ).catch(() => resA.verified);
   await cancelDeploy(ctx, info.csrf, target.battleId).catch(() => null);
 
-  const travelB = await battlefieldTravel(
-    ctx,
-    info.csrf,
-    target.battleId,
-    target.battleZoneId,
-    ordered.second.countryId,
-    secondTravel.toCountryId,
-    secondTravel.toRegionId,
-  );
-  if (!travelB.success) throw new Error(`travel→${ordered.second.side}: ${travelB.message}`);
+  let travelBLastMessage = '';
+  let travelBSucceeded = false;
+  for (let attempt = 1; attempt <= cfg.travelBRetryAttempts; attempt++) {
+    const travelB = await battlefieldTravel(
+      ctx,
+      info.csrf,
+      target.battleId,
+      target.battleZoneId,
+      ordered.second.countryId,
+      secondTravel.toCountryId,
+      secondTravel.toRegionId,
+    );
+    if (travelB.success) {
+      travelBSucceeded = true;
+      break;
+    }
+    travelBLastMessage = travelB.message;
+    if (attempt < cfg.travelBRetryAttempts) {
+      await cancelDeploy(ctx, info.csrf, target.battleId).catch(() => null);
+      await sleep(cfg.travelBRetryDelayMs);
+    }
+  }
+  if (!travelBSucceeded) {
+    throw new PartialBattleError(
+      target.battleId,
+      target.regionName,
+      resA,
+      'travel-b',
+      new Error(`travel→${ordered.second.side} failed after ${cfg.travelBRetryAttempts} attempts: ${travelBLastMessage}`),
+    );
+  }
 
   const invB = await getDeployInventory(ctx, info.csrf, target.battleId, ordered.second.countryId, target.battleZoneId);
   const skinB = invB.skinId ?? defaultSkin;
-  const resB = await deployWithRetry(
-    ctx,
-    info,
-    target,
-    ordered.second.side,
-    ordered.second.countryId,
-    skinB,
-    cfg,
-  );
+  let resB: SideOutcome;
+  try {
+    resB = await deployWithRetry(
+      ctx,
+      info,
+      target,
+      ordered.second.side,
+      ordered.second.countryId,
+      skinB,
+      cfg,
+    );
+  } catch (err) {
+    throw new PartialBattleError(target.battleId, target.regionName, resA, 'deploy-b', err as Error);
+  }
 
   const invAfter = await getDeployInventory(
     ctx,
@@ -465,6 +525,24 @@ export async function runFarmSession(
     } catch (e) {
       const msg = (e as Error).message;
       console.log(`   ❌ ${msg}`);
+      if (e instanceof PartialBattleError) {
+        const sideAVerified = e.sideA.verified ? '✅verified' : '⚠unverified';
+        const alert =
+          `⚠️ *Partial battle* #${e.battleId} (${e.regionName})\n` +
+          `Side *${e.sideA.side}* landed (${sideAVerified}), but *${e.stage}* failed:\n` +
+          `\`${e.cause.message.slice(0, 200)}\`\n` +
+          `Fuel barrel spent; the other side's medal is at risk — finish manually on battlefield.`;
+        await Promise.resolve(cfg.notify?.(alert)).catch(() => undefined);
+        skipped.push({
+          battleId: c.battleId,
+          regionName: c.regionName,
+          reason: `partial: ${e.stage} (${e.cause.message})`,
+        });
+        // Side A's fuel barrel is already spent — keep tracking by reading the
+        // most recent fuelLeft from sideA before continuing.
+        if (e.sideA.fuelLeft != null) lastFuel = e.sideA.fuelLeft;
+        continue;
+      }
       if (e instanceof ForbiddenError) {
         stopReason = 'forbidden';
         break;
