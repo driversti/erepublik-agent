@@ -29,6 +29,7 @@ import { collectMissionRewards } from '../tools/claim.js';
 import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
+import { loadSettings } from '../ui/settingsStore.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 import { travelHome } from '../tools/travel.js';
 
@@ -171,6 +172,12 @@ async function runCycle(
     `[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}` +
       `, fuel-week=${fuel.week}${fuelRolled ? ' (rolled over)' : ''}`,
   );
+
+  const settings = loadSettings();
+  if (settings.paused) {
+    console.log('[cycle] paused — skipping (toggle in config/settings.json or UI)');
+    return;
+  }
 
   // refresh: true → page.goto('/en/military/campaigns'), re-populates
   // erepublik.citizen globals and surfaces fuelLeft in the DOM.
