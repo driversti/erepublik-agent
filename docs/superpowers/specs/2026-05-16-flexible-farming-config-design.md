@@ -106,16 +106,41 @@ Same shape as Standard, but the division is forced to 3 instead of the player's 
 
 **Hybrid strategy: prefer in-page game JS, fall back to our formula.**
 
-The eRepublik battlefield page (`/military/battlefield/{id}`) computes the "expected damage" preview that appears when the user moves the energy slider. We piggyback on that calculation rather than reimplementing it — the game's function already includes natural-enemy bonus, active boosters, terrain modifiers, and any modifiers we don't yet know about.
+The eRepublik battlefield page (`/military/battlefield/{id}`) opens a deploy modal when the user clicks "Fight". That modal contains a slider with `ng-change="sliderChange()"` and `ng-model="deployConfig.energyUsed"`. The slider's handler updates the deploy estimates (kills + total damage) using a function we can call directly via Angular's scope.
 
-**Primary path:** when on the battlefield page, `page.evaluate()` calls the game's damage function. Exact symbol is TBD during Phase 5 (DevTools probe — candidate names: `SERVER_DATA.battle.weaponDamage`, `Battle.calculateDamage`, `erepublik.battle.calcDamage`). The wrapper signature:
+**Confirmed 2026-05-16 by inspecting `erpk_angular_controllers.1778829810.js`:**
 
-```typescript
-async function damagePerHitFromGame(
-  page: Page,
-  weaponQuality: number,
-): Promise<number | null>; // null = function not found / threw
+```js
+m.sliderChange = function(e) {
+  // … clamps energyUsed and updates UI bar widths …
+  m.calculateEstimates();              // ← does the math
+};
+
+m.calculateEstimates = function() {
+  const weapon = m.data.inventory.weapons.find(w => w.quality === m.deployConfig.weaponQuality);
+  const s = weapon.damageperHit;        // damage per hit (already scoped to this battle: S, R, FP, NE)
+  const r = m.deployConfig.energyUsed;
+  const l = Math.floor(r / 10);          // in-game hits
+  const i = (quality >= 10) ? 1 : 3 + overdriveQ;  // hits-to-kill (special weapons = 1, ground = 3-ish)
+  const c = Math.max(1, Math.floor(l / i));        // kills
+  const p = damageBoosterMultiplier;     // active overdrive/event booster
+  const f = vehicleBonusMultiplier;
+  const u = Math.floor(l * s * p * f);   // ← TOTAL DAMAGE
+  m.deployEstimates = { damageInt: u, kills: c, time, seconds };
+};
 ```
+
+**Primary path** — `pickEnergyForDamage(page, weaponQuality, targetDamage): Promise<number | null>`:
+
+1. Navigate to `/military/battlefield/{battleId}` (already done before deploy).
+2. Trigger the deploy modal (click `.fight_btn` or whatever the current selector is — confirm in Phase 5).
+3. Use `page.evaluate()` to:
+   - Locate the deploy scope via `angular.element('input[ng-change="sliderChange()"]').scope()`.
+   - Set `scope.deployConfig.weaponQuality = chosenQuality`, `scope.deployConfig.energyUsed = energyGuess`.
+   - Call `scope.sliderChange()`.
+   - Read `scope.deployEstimates.damageInt`.
+4. If `damageInt < targetDamage`, increase the energy guess and repeat (binary search bounded by `maxEnergy` from the slider's `max` attribute, currently 10–5260 for the probed account).
+5. Return the chosen energy value (an integer), or `null` if the slider scope is unreachable.
 
 **Fallback path:** if the primary returns `null`, use our formula in `src/tools/damageFormula.ts`:
 
@@ -356,7 +381,8 @@ No new endpoints for D4-TW deploys themselves — `battle-stats`, `battlefieldTr
 | 4 | Mid-fight contested-side handling | Default: check only at start; if contested mid-fight, alert via Telegram and continue. Revisit if alerts get noisy. |
 | 5 | UI port-collision behavior | Try 3737..3747 sequentially, log final port. No env var override in v1. |
 | 6 | Whitelist countries for D4-TW | Out of v1; can be added in `settings.d4tw.blockedCountries: number[]` later. |
-| 7 | In-page damage function symbol name | Phase 5 DevTools probe on a battlefield page: walk `SERVER_DATA`, `erepublik`, `Battle`, window scope for functions whose output matches the slider's "expected damage" UI value. Wrap discovered call in `damagePerHitFromGame()` with try/catch. |
+| 7 | ~~In-page damage function symbol name~~ | **RESOLVED 2026-05-16:** Angular scope on `input[ng-change="sliderChange()"]` in the deploy modal exposes `sliderChange()` and `deployEstimates.damageInt`. Source in `erpk_angular_controllers.js` confirms math: `damage = floor(energy/10) × damageperHit × boosterMult × vehicleMult`. |
+| 8 | Selector to open the deploy modal | Phase 5: probe the battlefield page when on D4-TW eligibility. Likely `.fight_btn`, `#deploy_btn`, or a `ng-click="openDeploy()"` target. |
 
 ---
 
