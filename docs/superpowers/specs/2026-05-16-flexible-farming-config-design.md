@@ -43,9 +43,9 @@ Already implemented in `src/farm/session.ts` + `src/farm/routing.ts`. Behavior p
 - Discovery: `listFarmableBattles` returns battles where the player's division has `wall.dom === 50` and `division_end === false`.
 - Eligibility: native citizen / mercenary / freedom-fighter via `getCitizenEligibility`.
 - Empty check: `isBattleDivisionEmpty` for both sides — zero damage in our division.
-- Deploy: both sides.
+- Deploy: both sides. **One small deploy per side**, energy = 30 (enough to kill one enemy, register a hit, lock in the Battle Hero medal). Two sides × 30e = 60e per battle (excluding overhead). If the game rejects with "not enough energy" (the spawned enemy needed 4 hits, not 3), retry the same 30e — different enemies have different HP, the next will usually accept.
 
-⚠️ **Behavioral change for existing users:** today Standard deploys with bare hands at 33 energy per deploy (3 hits × ~11 energy, capped at the per-deploy minimum). Per user decision 2026-05-16, this spec changes the default to "try Q7 → Q6 → … → Q1 → bare hands" (see §2.5). The per-deploy energy cost stays ~30 either way (both bare hands and Q-weapons have the same per-deploy minimum), but with a Q-weapon each in-game hit deals more damage (per [[Military_Formulas]]) — useful when winning Battle Hero ties against unexpected co-fighters in the same empty division. Trade-off: each deploy now consumes weapon ammo. Users who prefer the current bare-hands-only behavior can set `emptyDiv.nativeWeaponPriority: []` in `settings.json` — empty list short-circuits to bare hands.
+⚠️ **Behavioral change for existing users:** today Standard deploys with bare hands at 33 energy. Per user decision 2026-05-16, this spec changes the default to "try Q7 → Q6 → … → Q1 → bare hands" (see §2.5). The per-deploy energy stays at 30 either way, but with a Q-weapon each in-game hit deals more damage — useful in case another player drops into our empty division and contests the Battle Hero. Trade-off: each deploy now consumes weapon ammo (one round per game-hit; 2–5 rounds per deploy). Users who prefer the current bare-hands-only behavior can set `emptyDiv.nativeWeaponPriority: []` in `settings.json` — empty list short-circuits to bare hands.
 
 ### 2.2 D4-TW (new, D4 native, no Maverick)
 
@@ -64,20 +64,26 @@ This is different from Standard / Maverick-D3 which require physically traveling
 
 **Empty-side check (new):** `isSideEmpty(battleId, division=4, side='invader'|'defender')` — `battle-stats` already returns per-side per-division stats; the existing `isBattleDivisionEmpty` checks both sides, we add a single-side variant. The "my side" is whichever side matches `myCountryId`.
 
-**Energy math primer.** The game's deploy form does NOT click hit-by-hit — one POST to `fightDeploy-startDeploy` runs N in-game hits where `N = energy / 10`. Each in-game hit deals `damagePerHit` damage **regardless of whether it kills the enemy** (2–5 hits typically kill one). The game requires a minimum energy per deploy (11 for special weapons like bazookas, 30 for normal weapons / bare hands). Bombs are inventory-only — no energy cost, one bomb per deploy.
+**Energy math primer.** One POST to `fightDeploy-startDeploy` runs `N = energy / 10` in-game hits in a row. Hits go against the next enemy in line; when one enemy dies (typically 2–5 hits depending on quality + division), the next spawns and hits continue. Constraints:
 
-**Deploy loop:**
+- A deploy must kill **at least one enemy** — the game rejects with "not enough energy" if the requested energy is below the first enemy's HP. **Minimum safe energy** is 30 for normal weapons / bare hands (covers up to 3 hits per kill); the game lets a player deploy as much energy as they have in the pool.
+- Bazookas: one shot = guaranteed kill, deploy energy clamped to 11 (game minimum, the missing 1 vs 10 is a rounding artifact).
+- Bombs: special inventory items, no energy cost, one bomb consumed per deploy.
+
+D4-TW uses **one large deploy** per battle: we calculate `hitsNeeded * 10` and put it all into a single POST. The game internally chains hits across however many enemies it takes, and we receive the final damage tally.
+
+**Deploy loop (D4-TW):**
 
 1. Determine `damagePerHit` from `damagePerHit(strength, rankValue, firepower)` (see §2.4).
 2. `target = side === 'invader' ? settings.d4tw.targetDamageAttacker : settings.d4tw.targetDamageDefender`.
 3. `hitsNeeded = ceil(target / damagePerHit)` — total in-game hits to reach the damage target.
-4. `energyToSpend = hitsNeeded * 10`, clamped to the per-deploy minimum (30 for normal weapons / bare hands; 11 for bazookas if `hitsNeeded === 1`).
-5. Check pre-conditions: `poolEnergy >= energyToSpend` AND inventory has enough of the chosen weapon's ammo (`ammoNeeded = hitsNeeded` for ground weapons; 1 for bazooka).
-6. If pre-conditions fail: **skip the battle, alert via Telegram** (`"D4-TW: skipped {battleId} — need {energyToSpend}e + {ammoNeeded} ammo, have {poolEnergy}e / {ammoOnHand} ammo"`), do not partially deploy.
-7. Otherwise: one POST to `deployWeapon` with `energy: energyToSpend` and the chosen weapon. The existing retry/verify loop in `tools/farm.ts` already handles transient errors.
+4. `energyToSpend = max(hitsNeeded * 10, 30)` — guarantees ≥30 even if `hitsNeeded < 3` (rare for TW targets but possible at very high strength).
+5. Check pre-conditions: `poolEnergy >= energyToSpend` AND `ammoOnHand >= hitsNeeded` (for ground weapons; bazookas/bombs would never apply at D4-TW scale).
+6. If pre-conditions fail: **skip the battle, alert via Telegram** (`"D4-TW: skipped {battleId} — need {energyToSpend}e + {hitsNeeded} ammo, have {poolEnergy}e / {ammoOnHand} ammo"`), do not partially deploy.
+7. Otherwise: **one POST** to `deployWeapon` with `energy: energyToSpend`. The existing retry/verify loop in `tools/farm.ts` handles transient errors.
 8. After battle: re-check empty-side; if another player joined mid-fight, alert (`"D4-TW: side contested mid-fight at {battleId}"`) and continue — we already paid the cost.
 
-**Session cap:** `settings.d4tw.maxBattlesPerSession` (default 3, user-configurable). Tooltip in UI explains: "How many TW battles per cycle (~10 min). Higher = drain energy faster, hit all targets sooner. Default 3 is balanced."
+**Session cap:** `settings.d4tw.maxBattlesPerSession` (default **1**, user-configurable). Tooltip in UI explains: "How many TW battles per cycle (~10 min). For TW each battle is one big deploy of 1500–3000 energy, so the pool typically supports only one battle per cycle. Set higher only if you have very high strength + a full energy pool."
 
 **Travel:** None within D4-TW — see the "No travel required" note above. Deploying on a native-country battle works from any region of that country.
 
@@ -92,7 +98,7 @@ Same shape as Standard, but the division is forced to 3 instead of the player's 
 
 **Empty check:** `isBattleDivisionEmpty(battleId, division=3)`.
 
-**Deploy:** Both sides (same as Standard).
+**Deploy:** Both sides (same as Standard). With bombs: 1 bomb per side, 0 energy, 2 bombs per battle. With bare-hands fallback: 1 deploy per side at 30e (same retry-on-rejection logic as Standard).
 
 **Weapon policy:** Foreign-division — `settings.emptyDiv.foreignWeaponPolicy` (default `"bomb-then-bazooka"`). Big Bomb (5M damage) preferred, fallback to Small Bomb, then bazookas, final fallback bare hands. See §2.5.
 
@@ -190,10 +196,10 @@ UI shows: "Maverick auto-detected: **YES** / **NO**" with an "Override" link to 
 
 | Strategy | Energy per battle (typical) | Notes |
 |----------|-----------------------------|-------|
-| Standard (bare hands or Q-weapon) | ~60–80 | 2 sides × 30–40 per deploy |
+| Standard (bare hands or Q-weapon) | ~60 | 2 sides × 30e per deploy; retries on rejection cost nothing |
 | Maverick-D3 with bombs | ~0 | Bombs are pure inventory; only context refresh costs anything |
-| Maverick-D3 with `no-weapon` | ~60–80 | Same as Standard |
-| D4-TW | `ceil(targetDamage / damagePerHit) * 10` (single side, single deploy) | Strongly account-dependent. Sample: target 130M, S=423k, R=89, Q7 → ~2200e per battle |
+| Maverick-D3 with `no-weapon` | ~60 | Same as Standard |
+| D4-TW | `max(ceil(targetDamage / damagePerHit) * 10, 30)` (single side, single big deploy) | Strongly account-dependent. Sample: target 130M, S=423k, R=89, Q7 → ~2200e per battle. Default `maxBattlesPerSession: 1` reflects that one full pool covers ≈1 such battle |
 
 Each strategy exposes `estimateEnergyPerBattle(ctx, settings): number`. `decideFarming` calls the active strategy's estimate before deciding session size. For D4-TW, a single battle may consume more energy than the entire weekly pool of a low-strength account — the gate will correctly skip until enough energy regenerates.
 
@@ -214,7 +220,7 @@ The weekly fuel budget (70 barrels) is preserved as-is for Standard. For D4-TW w
   "d4tw": {
     "targetDamageAttacker": 130000000,
     "targetDamageDefender": 220000000,
-    "maxBattlesPerSession": 3,
+    "maxBattlesPerSession": 1,
     "weaponPriority": [7, 6, 5, 4, 3, 2, 1]
   },
   "emptyDiv": {
