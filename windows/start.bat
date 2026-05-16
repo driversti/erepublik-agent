@@ -25,6 +25,9 @@ echo Starting erepublik-agent. Close this window to stop the bot,
 echo or double-click stop.bat. Logs: logs\agent-YYYY-MM-DD.log
 echo.
 
+REM Background opener: wait 5s for the UI server to bind, then open the dashboard.
+start /b "" cmd /c "timeout /t 5 /nobreak >nul & call panel.bat"
+
 node\node.exe app\dist\agent\runner.js
 
 if errorlevel 1 (

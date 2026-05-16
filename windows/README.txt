@@ -27,6 +27,9 @@ Quick start
    manually. The window closes automatically once you're logged in.
 4. Double-click start.bat.
    The bot starts running. Minimize the window. Done.
+5. The dashboard opens in your default browser a few seconds after
+   the bot starts. To reopen it later (e.g. if you closed the tab),
+   double-click panel.bat.
 
 Stopping the bot
 ----------------
