@@ -28,7 +28,7 @@ import { buyOneCheapestFood } from '../tools/market.js';
 import { collectMissionRewards } from '../tools/claim.js';
 import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
-import { runFarmSession } from '../farm/session.js';
+import { getStrategy } from '../farm/strategies/index.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 import { travelHome } from '../tools/travel.js';
 
@@ -326,7 +326,7 @@ async function runCycle(
     ) {
       const residenceCountryId = ctxInfo.residenceCountryId ?? countryId;
       try {
-        const result = await runFarmSession(
+        const result = await getStrategy('standard').run(
           ctx,
           {
             csrf,
