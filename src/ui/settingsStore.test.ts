@@ -95,4 +95,34 @@ describe('settingsStore', () => {
       expect(() => loadSettings()).toThrow();
     });
   });
+
+  describe('saveSettings', () => {
+    it('persists changes that loadSettings later reads', () => {
+      const first = loadSettings();
+      first.paused = true;
+      first.d4tw.targetDamageAttacker = 150_000_000;
+      saveSettings(first);
+
+      const second = loadSettings();
+      expect(second.paused).toBe(true);
+      expect(second.d4tw.targetDamageAttacker).toBe(150_000_000);
+    });
+
+    it('rejects payloads that fail schema validation', () => {
+      const s = loadSettings();
+      // @ts-expect-error — intentional invalid value
+      s.paused = 'yes';
+      expect(() => saveSettings(s)).toThrow();
+    });
+
+    it('does not leave a temp file behind on success', () => {
+      const s = loadSettings();
+      saveSettings(s);
+      // Temp file uses `.tmp` suffix; final file is settings.json
+      const dirContents = readFileSync(join(tmpRoot, 'config', 'settings.json'), 'utf8');
+      expect(dirContents.length).toBeGreaterThan(0);
+      const tmpFile = join(tmpRoot, 'config', 'settings.json.tmp');
+      expect(existsSync(tmpFile)).toBe(false);
+    });
+  });
 });

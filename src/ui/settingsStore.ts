@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { configDir } from '../paths.js';
@@ -107,7 +107,15 @@ export function loadSettings(): Settings {
   return Settings.parse(raw);
 }
 
-// Stub — implemented in Task 3
-export function saveSettings(_settings: Settings): void {
-  throw new Error('saveSettings not implemented yet (Task 3)');
+/**
+ * Atomic write: serialize to a temp file then rename over the target.
+ * Rename is atomic on POSIX and Windows NTFS, so a concurrent reader either
+ * sees the old file or the new one — never a torn write.
+ */
+export function saveSettings(settings: Settings): void {
+  const validated = Settings.parse(settings);
+  const file = filePath();
+  const tmp = file + '.tmp';
+  writeFileSync(tmp, JSON.stringify(validated, null, 2), 'utf8');
+  renameSync(tmp, file);
 }
