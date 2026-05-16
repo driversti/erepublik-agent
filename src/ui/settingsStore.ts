@@ -1,4 +1,7 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
+import { configDir } from '../paths.js';
 
 // ── Schema (matches spec §4.1) ──────────────────────────────────────────────
 
@@ -65,3 +68,46 @@ export type Settings = z.infer<typeof Settings>;
 
 /** Fully-defaulted settings object. Used as fallback when no file exists. */
 export const DEFAULT_SETTINGS: Settings = Settings.parse({});
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+
+function filePath(): string {
+  return join(configDir(), 'settings.json');
+}
+
+function envNum(key: string, fallback: number): number {
+  const v = process.env[key];
+  if (v == null || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Build the initial settings object on first run, sourcing migrated values
+ * from .env when present. Keys not in .env fall through to schema defaults.
+ */
+function buildInitial(): Settings {
+  return Settings.parse({
+    travel: {
+      maxTravelCC: envNum('ERP_FARM_MAX_TRAVEL_CC', 100),
+      returnHomeAfterMinutes: envNum('ERP_RETURN_HOME_AFTER_MINUTES', 15),
+      returnHomeMaxCC: envNum('ERP_RETURN_HOME_MAX_CC', 500),
+    },
+  });
+}
+
+export function loadSettings(): Settings {
+  const file = filePath();
+  if (!existsSync(file)) {
+    const initial = buildInitial();
+    writeFileSync(file, JSON.stringify(initial, null, 2), 'utf8');
+    return initial;
+  }
+  const raw = JSON.parse(readFileSync(file, 'utf8'));
+  return Settings.parse(raw);
+}
+
+// Stub — implemented in Task 3
+export function saveSettings(_settings: Settings): void {
+  throw new Error('saveSettings not implemented yet (Task 3)');
+}
