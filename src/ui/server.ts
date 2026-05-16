@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadSettings, saveSettings, Settings } from './settingsStore.js';
 import { tailLog } from './logsTail.js';
+import { tailHistory } from './historyStore.js';
 import type { UiSnapshot } from './snapshot.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -133,8 +134,10 @@ function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): 
     const lines = parseLinesParam(url);
     return sendJson(res, 200, { lines: tailLog(lines) });
   }
-  // History is added in Phase 7; return empty so the UI doesn't break today.
-  if (path === '/api/history') return sendJson(res, 200, { events: [] });
+  if (path === '/api/history') {
+    const lines = parseLinesParam(url);
+    return sendJson(res, 200, { events: tailHistory(lines) });
+  }
 
   res.writeHead(404).end('Not found');
 }

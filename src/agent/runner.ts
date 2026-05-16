@@ -36,6 +36,7 @@ import { travelHome } from '../tools/travel.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 import { sleepUntilWake } from '../ui/sleepUntilWake.js';
+import { appendHistory } from '../ui/historyStore.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -195,6 +196,7 @@ async function runCycle(
     // real-world problem, move extractCitizenContext + handleCaptchaIfPresent
     // above this check.
     console.log('[cycle] paused — skipping (toggle in config/settings.json or UI)');
+    appendHistory({ type: 'cycle', reason: 'paused' });
     return;
   }
 
@@ -371,6 +373,10 @@ async function runCycle(
           { modeOverride: settings.modeOverride, maverickManual: settings.maverickManual },
           { division: ctxInfo.division, hasMaverick: ctxInfo.hasMaverick },
         );
+        if (lastMode !== null && lastMode !== mode) {
+          appendHistory({ type: 'mode', from: lastMode, to: mode });
+        }
+        lastMode = mode;
         console.log(`[cycle] strategy: ${mode}`);
         const result = await getStrategy(mode).run(
           ctx,
@@ -388,6 +394,9 @@ async function runCycle(
           },
           { maxBattles: decision.battlesThisSession, notify: (m) => notifier.send(m) },
         );
+        for (const w of result.wins) {
+          appendHistory({ type: 'battle', battleId: w.battleId, regionName: w.regionName, mode });
+        }
         const fuelAfter = result.fuelLeftAtEnd ?? fuelAtCycleStart;
         const consumed = Math.max(0, fuelAtCycleStart - fuelAfter);
         fuel.spent += consumed;
@@ -502,6 +511,11 @@ async function runCycle(
     state.lastDigestHash = hash;
     save(state);
   }
+
+  appendHistory({
+    type: 'cycle',
+    reason: lastDecisionReason ?? (shortCircuit ? 'short-circuit' : 'completed'),
+  });
 }
 
 const uiSnapshot = createSnapshot();
@@ -528,6 +542,7 @@ const captchaCfg: CaptchaConfig = {
 };
 
 let stopping = false;
+let lastMode: string | null = null;
 process.on('SIGINT', () => {
   if (stopping) process.exit(1);
   stopping = true;
@@ -542,6 +557,7 @@ try {
       const message = (err as Error).message;
       console.error('[cycle] failed:', message);
       await notifier.sendError(message);
+      appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
     }
     if (ONCE || stopping) break;
