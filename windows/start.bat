@@ -27,4 +27,11 @@ echo.
 
 node\node.exe app\dist\agent\runner.js
 
+if errorlevel 1 (
+    echo.
+    echo Node exited with an error. Check logs\agent-YYYY-MM-DD.log for details.
+    pause
+)
+
 endlocal
+exit /b 0

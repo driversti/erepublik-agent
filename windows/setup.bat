@@ -1,31 +1,17 @@
 @echo off
-setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
-
-echo.
-echo =====================================================
-echo   erepublik-agent setup
-echo =====================================================
-echo.
-echo This wizard will configure the bot. Press Enter to
-echo keep the default shown in [brackets], or type a new
-echo value. Run this again any time to change settings.
-echo.
 
 if not exist config mkdir config
 set "ENVFILE=config\.env"
 set "TMPFILE=config\.env.new"
 
-:: Read existing values into variables if .env already exists.
-:: For simplicity we re-prompt for everything; existing values
-:: are shown as defaults so blank input keeps them.
+:: Defaults (used when no existing .env is found, or when the user
+:: keeps the bracketed default by pressing Enter).
 set "CUR_LOGIN="
 set "CUR_PASSWORD="
 set "CUR_SLUG=main"
 set "CUR_MAX_FOOD=3.0"
-set "CUR_HEADED=false"
-set "CUR_LOOP=600000"
 set "CUR_FARM_MAX_CC=400"
 set "CUR_FARM_MIN_FUEL=10"
 set "CUR_FARM_BLOCKED_CSV="
@@ -36,14 +22,13 @@ set "CUR_TG_CHAT="
 set "CUR_CAPTCHA=none"
 set "CUR_CAPTCHA_KEY="
 
+:: Pre-populate defaults from existing .env if present.
 if exist "%ENVFILE%" (
     for /f "usebackq tokens=1,* delims==" %%a in ("%ENVFILE%") do (
         if "%%a"=="ERP_LOGIN" set "CUR_LOGIN=%%b"
         if "%%a"=="ERP_PASSWORD" set "CUR_PASSWORD=%%b"
         if "%%a"=="ERP_ACCOUNT_SLUG" set "CUR_SLUG=%%b"
         if "%%a"=="ERP_MAX_FOOD_PRICE" set "CUR_MAX_FOOD=%%b"
-        if "%%a"=="HEADED" set "CUR_HEADED=%%b"
-        if "%%a"=="LOOP_INTERVAL_MS" set "CUR_LOOP=%%b"
         if "%%a"=="ERP_FARM_MAX_TRAVEL_CC" set "CUR_FARM_MAX_CC=%%b"
         if "%%a"=="ERP_FARM_MIN_FUEL" set "CUR_FARM_MIN_FUEL=%%b"
         if "%%a"=="ERP_FARM_BLOCKED_COUNTRIES" set "CUR_FARM_BLOCKED_CSV=%%b"
@@ -55,6 +40,19 @@ if exist "%ENVFILE%" (
         if "%%a"=="ERP_CAPTCHA_API_KEY" set "CUR_CAPTCHA_KEY=%%b"
     )
 )
+
+:: Now enable delayed expansion for the user-interaction portion.
+setlocal enabledelayedexpansion
+
+echo.
+echo =====================================================
+echo   erepublik-agent setup
+echo =====================================================
+echo.
+echo This wizard will configure the bot. Press Enter to
+echo keep the default shown in [brackets], or type a new
+echo value. Run this again any time to change settings.
+echo.
 
 echo --- Account ---
 call :prompt "eRepublik email address" "%CUR_LOGIN%" LOGIN
