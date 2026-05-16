@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadSettings } from './settingsStore.js';
+import { loadSettings, saveSettings, Settings } from './settingsStore.js';
 import { tailLog } from './logsTail.js';
 import type { UiSnapshot } from './snapshot.js';
 
@@ -55,17 +55,58 @@ function parseLinesParam(url: string | undefined): number {
   return Math.min(Math.floor(n), 1000);
 }
 
+const MAX_BODY_BYTES = 64 * 1024;
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const ct = (req.headers['content-type'] ?? '').split(';')[0].trim();
+  if (ct !== 'application/json') {
+    throw Object.assign(new Error('Content-Type must be application/json'), { httpStatus: 415 });
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    total += buf.length;
+    if (total > MAX_BODY_BYTES) {
+      throw Object.assign(new Error('Request body exceeds 64 KB'), { httpStatus: 413 });
+    }
+    chunks.push(buf);
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw Object.assign(new Error('Malformed JSON: ' + (err as Error).message), { httpStatus: 400 });
+  }
+}
+
+async function handlePutSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const raw = await readJsonBody(req);
+    const validated = Settings.parse(raw);
+    saveSettings(validated);
+    sendJson(res, 200, validated);
+  } catch (err) {
+    const status = (err as { httpStatus?: number }).httpStatus ?? 400;
+    sendJson(res, status, { error: (err as Error).message });
+  }
+}
+
 function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): void {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
 
+  // Strip query string for path-matching.
+  const path = url.split('?')[0];
+
+  if (method === 'PUT' && path === '/api/settings') {
+    return void handlePutSettings(req, res);
+  }
   if (method !== 'GET') {
     res.writeHead(405).end('Method not allowed');
     return;
   }
-
-  // Strip query string for path-matching.
-  const path = url.split('?')[0];
 
   if (path === '/') return sendStatic(res, 'index.html', 'text/html; charset=utf-8');
   if (path === '/app.js') return sendStatic(res, 'app.js', 'application/javascript; charset=utf-8');

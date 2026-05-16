@@ -93,4 +93,120 @@ describe('UI server', () => {
       await handle.close();
     }
   });
+
+  describe('PUT /api/settings', () => {
+    it('persists a valid payload and returns the parsed result', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        // Seed defaults via GET so the file exists.
+        await fetch(`http://127.0.0.1:${handle.port}/api/settings`);
+
+        const payload = {
+          paused: true,
+          farmEnabled: false,
+          modeOverride: null,
+          maverickManual: null,
+          d4tw: {
+            targetDamageAttacker: 150_000_000,
+            targetDamageDefender: 250_000_000,
+            maxBattlesPerSession: 2,
+            weaponPriority: [7, 6, 5],
+          },
+          emptyDiv: {
+            maxBattlesPerSession: 3,
+            nativeWeaponPriority: [7, 6, 5, 4, 3, 2, 1],
+            foreignWeaponPolicy: 'bomb-then-bazooka' as const,
+          },
+          travel: {
+            maxTravelCC: 100,
+            returnHomeAfterMinutes: 15,
+            returnHomeMaxCC: 500,
+          },
+          detected: {
+            division: null,
+            hasMaverick: null,
+            citizenId: null,
+            countryId: null,
+            lastUpdated: null,
+          },
+        };
+        const put = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        expect(put.status).toBe(200);
+        const echoed = await put.json();
+        expect(echoed.paused).toBe(true);
+        expect(echoed.d4tw.targetDamageAttacker).toBe(150_000_000);
+
+        // Subsequent GET should reflect the change.
+        const get = await fetch(`http://127.0.0.1:${handle.port}/api/settings`);
+        const reread = await get.json();
+        expect(reread.paused).toBe(true);
+        expect(reread.d4tw.maxBattlesPerSession).toBe(2);
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rejects payload that fails schema validation with 400', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paused: 'not a boolean' }),
+        });
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toBeDefined();
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rejects non-JSON content-type with 415', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'text/plain' },
+          body: 'plain text',
+        });
+        expect(res.status).toBe(415);
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rejects malformed JSON with 400', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{ not valid json',
+        });
+        expect(res.status).toBe(400);
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rejects oversize body (>64 KB) with 413', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const big = 'x'.repeat(70 * 1024);
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ junk: big }),
+        });
+        expect(res.status).toBe(413);
+      } finally {
+        await handle.close();
+      }
+    });
+  });
 });
