@@ -1,11 +1,12 @@
 import { standardStrategy } from './standard.js';
 import { d4twStrategy } from './d4tw.js';
+import { maverickD3Strategy } from './maverickD3.js';
 import type { FarmStrategy, StrategyId } from './types.js';
 
 const registry: Partial<Record<StrategyId, FarmStrategy>> = {
   standard: standardStrategy,
   d4tw: d4twStrategy,
-  // 'maverickD3' will be added in a later phase.
+  maverickD3: maverickD3Strategy,
 };
 
 export function getStrategy(id: StrategyId): FarmStrategy {
@@ -36,3 +37,4 @@ export {
 } from './types.js';
 export { standardStrategy } from './standard.js';
 export { d4twStrategy } from './d4tw.js';
+export { maverickD3Strategy } from './maverickD3.js';
