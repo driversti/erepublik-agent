@@ -1,6 +1,7 @@
 import { config as loadDotenv } from 'dotenv';
 import { join } from 'node:path';
-import { configDir } from '../paths.js';
+import { writeFileSync, unlinkSync, createWriteStream } from 'node:fs';
+import { configDir, logsDir } from '../paths.js';
 
 loadDotenv({ path: join(configDir(), '.env') });
 // Fall back to default .env in cwd if config/.env wasn't found
@@ -49,10 +50,51 @@ const Env = z.object({
   // Hard ceiling on the residence-trip cost (local CC). Travel is skipped +
   // alerted when the pre-check returns a higher cost.
   ERP_RETURN_HOME_MAX_CC: z.coerce.number().int().positive().default(500),
+  ERP_FILE_LOGGING: z.enum(['true', 'false']).default('false'),
 });
 type Env = z.infer<typeof Env>;
 
 const env = Env.parse(process.env);
+
+// ── PID file + optional file logging ───────────────────────────────────────
+const pidPath = join(logsDir(), 'agent.pid');
+writeFileSync(pidPath, String(process.pid));
+
+const cleanupPid = (): void => {
+  try {
+    unlinkSync(pidPath);
+  } catch {
+    /* ignore */
+  }
+};
+process.on('exit', cleanupPid);
+process.on('SIGINT', () => {
+  cleanupPid();
+  process.exit(130);
+});
+process.on('SIGTERM', () => {
+  cleanupPid();
+  process.exit(143);
+});
+
+if (env.ERP_FILE_LOGGING === 'true') {
+  // Daily rotation matches the eRepublik day boundary the agent already uses.
+  // The runner re-reads the day each cycle; for logging we just use ISO date
+  // because operators reading logs think in calendar days, not game days.
+  const stamp = new Date().toISOString().slice(0, 10);
+  const stream = createWriteStream(join(logsDir(), `agent-${stamp}.log`), { flags: 'a' });
+
+  const origLog = console.log.bind(console);
+  const origErr = console.error.bind(console);
+  console.log = (...args: unknown[]) => {
+    origLog(...args);
+    stream.write(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
+  };
+  console.error = (...args: unknown[]) => {
+    origErr(...args);
+    stream.write('[ERR] ' + args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
+  };
+}
 
 const args = new Set(process.argv.slice(2));
 const ONCE = args.has('--once');
