@@ -1,6 +1,7 @@
 import { launchPersistentContext } from 'cloakbrowser';
 import type { BrowserContext } from 'playwright-core';
 import { profileDir as resolveProfileDir } from '../paths.js';
+import { apiCall } from '../transport/apiCall.js';
 
 export interface SessionOptions {
   accountSlug: string;
@@ -53,6 +54,9 @@ export interface CitizenContext {
   dailyOrders: DailyOrder[] | null;
   fuelLeft: number | null;
   maxFuel: number | null;
+  strength: number | null;
+  rankNumber: number | null;
+  hasMaverick: boolean | null;
 }
 
 export interface ExtractOptions {
@@ -200,10 +204,35 @@ export async function extractCitizenContext(
   });
 
   if (!info.csrf) throw new Error('CSRF token not found');
+
+  let strength: number | null = null;
+  let rankNumber: number | null = null;
+  let hasMaverick: boolean | null = null;
+  const citizenId = info.citizenId ?? null;
+  if (citizenId != null) {
+    try {
+      const { body: profile } = await apiCall(ctx, {
+        method: 'GET',
+        path: `/en/main/citizen-profile-json-personal/${citizenId}`,
+        csrf: info.csrf,
+      });
+      const p = profile as Record<string, unknown>;
+      const milData = (p?.military as Record<string, unknown>)?.militaryData as Record<string, unknown> | undefined;
+      strength = typeof milData?.strength === 'number' ? milData.strength : null;
+      rankNumber = typeof milData?.rankNumber === 'number' ? milData.rankNumber : null;
+      const activePacks = p?.activePacks;
+      hasMaverick = activePacks != null && typeof activePacks === 'object'
+        ? 'division_switch_pack' in activePacks
+        : null;
+    } catch (err) {
+      console.warn(`[ctx] profile fetch failed: ${(err as Error).message}`);
+    }
+  }
+
   return {
     csrf: info.csrf,
     countryId: info.countryId ?? null,
-    citizenId: info.citizenId ?? null,
+    citizenId,
     division: info.division ?? null,
     residenceRegionId: info.residenceRegionId ?? null,
     residenceCountryId: info.residenceCountryId ?? null,
@@ -219,5 +248,8 @@ export async function extractCitizenContext(
     dailyOrders: info.dailyOrders ?? null,
     fuelLeft: info.fuelLeft ?? null,
     maxFuel: info.maxFuel ?? null,
+    strength,
+    rankNumber,
+    hasMaverick,
   };
 }

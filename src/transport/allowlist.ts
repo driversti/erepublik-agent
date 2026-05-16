@@ -32,6 +32,8 @@ const PHASE_1_ALLOWLIST: readonly AllowEntry[] = [
   { method: 'POST', path: '/en/military/fightDeploy-startDeploy' },
   { method: 'POST', path: '/en/military/fightDeploy-cancelDeploy' },
   { method: 'POST', path: '/en/military/battle-console' },
+  { method: 'GET', path: '/en/main/citizen-profile-json-personal/' },
+  { method: 'GET', path: '/en/economy/inventory-json' },
 ];
 
 export function isAllowed(method: HttpMethod, path: string): boolean {
