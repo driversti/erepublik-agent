@@ -1,10 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { eRepublikWeek } from '../erepublik/week.js';
+import { sessionsDir } from '../paths.js';
 
-const SESSIONS_DIR = resolve('sessions');
-const FILE = join(SESSIONS_DIR, 'weekly-fuel-state.json');
+function filePath(): string {
+  return join(sessionsDir(), 'weekly-fuel-state.json');
+}
 
 export const WeeklyFuelState = z.object({
   /** Tuesday-anchored eRepublik week number. Mismatch with current week → reset. */
@@ -35,22 +37,23 @@ function emptyState(week: number): WeeklyFuelState {
 }
 
 export function loadFuel(now: Date = new Date()): { state: WeeklyFuelState; rolledOver: boolean } {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
+  // sessionsDir() already mkdirs.
   const currentWeek = eRepublikWeek(now);
-  if (!existsSync(FILE)) {
+  const file = filePath();
+  if (!existsSync(file)) {
     return { state: emptyState(currentWeek), rolledOver: false };
   }
-  const parsed = WeeklyFuelState.parse(JSON.parse(readFileSync(FILE, 'utf8')));
+  const parsed = WeeklyFuelState.parse(JSON.parse(readFileSync(file, 'utf8')));
   if (parsed.week === currentWeek) {
     return { state: parsed, rolledOver: false };
   }
   // Week rolled over — archive prior week for retrospective analysis.
-  const archive = join(SESSIONS_DIR, `weekly-fuel-${parsed.week}.archive.json`);
+  const archive = join(sessionsDir(), `weekly-fuel-${parsed.week}.archive.json`);
   writeFileSync(archive, JSON.stringify(parsed, null, 2), 'utf8');
   return { state: emptyState(currentWeek), rolledOver: true };
 }
 
 export function saveFuel(state: WeeklyFuelState): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  writeFileSync(FILE, JSON.stringify(state, null, 2), 'utf8');
+  // sessionsDir() already mkdirs.
+  writeFileSync(filePath(), JSON.stringify(state, null, 2), 'utf8');
 }

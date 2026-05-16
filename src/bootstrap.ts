@@ -1,8 +1,13 @@
-import 'dotenv/config';
+import { config as loadDotenv } from 'dotenv';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { launchPersistentContext } from 'cloakbrowser';
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { configDir, profileDir } from './paths.js';
+
+loadDotenv({ path: join(configDir(), '.env') });
+// Fall back to default .env in cwd if config/.env wasn't found
+// (developer workflow). Dotenv silently ignores missing files.
+loadDotenv();
 
 const Env = z.object({
   ERP_LOGIN: z.string().email(),
@@ -13,14 +18,13 @@ const Env = z.object({
 
 const env = Env.parse(process.env);
 
-const profileDir = resolve(`sessions/profile/${env.ERP_ACCOUNT_SLUG}`);
-mkdirSync(profileDir, { recursive: true });
+const resolvedProfileDir = profileDir(env.ERP_ACCOUNT_SLUG);
 
-console.log(`[bootstrap] profile dir: ${profileDir}`);
+console.log(`[bootstrap] profile dir: ${resolvedProfileDir}`);
 console.log(`[bootstrap] launching CloakBrowser (headed=${env.HEADED})`);
 
 const ctx = await launchPersistentContext({
-  userDataDir: profileDir,
+  userDataDir: resolvedProfileDir,
   headless: env.HEADED === 'false',
   viewport: { width: 1366, height: 800 },
 });
