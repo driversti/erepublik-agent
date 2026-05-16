@@ -32,6 +32,8 @@ import { getStrategy } from '../farm/strategies/index.js';
 import { loadSettings } from '../ui/settingsStore.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 import { travelHome } from '../tools/travel.js';
+import { startUiServer } from '../ui/server.js';
+import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -163,8 +165,12 @@ async function runCycle(
   ctx: BrowserContext,
   notifier: TelegramNotifier,
   captchaCfg: CaptchaConfig,
+  uiSnapshot: UiSnapshot,
 ): Promise<void> {
   const day = eRepublikDay();
+  uiSnapshot.lastCycleStartedAt = new Date().toISOString();
+  uiSnapshot.day = day;
+  let lastDecisionReason: string | null = null;
   const { state, rolledOver } = loadOrInit(day);
   const weekly = loadWeekly();
   const { state: fuel, rolledOver: fuelRolled } = loadFuel();
@@ -175,6 +181,9 @@ async function runCycle(
 
   const settings = loadSettings();
   if (settings.paused) {
+    uiSnapshot.lastUpdatedAt = Date.now();
+    uiSnapshot.settings = settings;
+    uiSnapshot.lastFarmReason = 'paused';
     // Skip BEFORE extractCitizenContext to avoid hammering the page every
     // LOOP_INTERVAL_MS while paused. Trade-off: if a captcha appears during
     // the paused window, it won't be detected until the operator unpauses
@@ -340,6 +349,7 @@ async function runCycle(
             weekFraction: 0,
           },
         };
+    lastDecisionReason = decision.reason;
     console.log(
       `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
         `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
@@ -438,6 +448,39 @@ async function runCycle(
     saveFuel(fuel);
   }
 
+  uiSnapshot.lastUpdatedAt = Date.now();
+  uiSnapshot.settings = settings;
+  uiSnapshot.dailyActions = {
+    work: !!state.completedActions.work,
+    train: !!state.completedActions.train,
+    buyFood: !!state.completedActions.buyFood,
+    vipClaim: !!state.completedActions.vipClaim,
+  };
+  uiSnapshot.weeklyFuel = {
+    week: fuel.week,
+    spent: fuel.spent,
+    target: 0,
+    hitsLanded: fuel.hitsLanded,
+    cyclesSkipped: fuel.cyclesSkipped,
+  };
+  uiSnapshot.citizen = {
+    id: ctxInfo.citizenId,
+    countryId: ctxInfo.countryId,
+    division: ctxInfo.division,
+    energy: ctxInfo.energy,
+    energyPoolLimit: ctxInfo.energyPoolLimit,
+    fuelLeft: ctxInfo.fuelLeft,
+    maxFuel: ctxInfo.maxFuel,
+    currentRegionId: ctxInfo.currentRegionId,
+    residenceRegionId: ctxInfo.residenceRegionId,
+    atHome:
+      ctxInfo.currentRegionId != null && ctxInfo.residenceRegionId != null
+        ? ctxInfo.currentRegionId === ctxInfo.residenceRegionId
+        : null,
+  };
+  uiSnapshot.lastFarmReason = lastDecisionReason;
+  uiSnapshot.lastError = null;
+
   const hash = snapshotHash(state, weekly, fuel);
   if (hash !== state.lastDigestHash) {
     const digest = formatDigest(day, state, weekly, fuel);
@@ -451,6 +494,10 @@ async function runCycle(
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+const uiSnapshot = createSnapshot();
+const uiServer = await startUiServer({ getSnapshot: () => uiSnapshot });
+console.log(`[runner] UI available at http://localhost:${uiServer.port}`);
 
 const ctx = await openSession({ accountSlug: env.ERP_ACCOUNT_SLUG, headed: env.HEADED === 'true' });
 const notifier = new TelegramNotifier({
@@ -481,17 +528,19 @@ process.on('SIGINT', () => {
 try {
   do {
     try {
-      await runCycle(ctx, notifier, captchaCfg);
+      await runCycle(ctx, notifier, captchaCfg, uiSnapshot);
     } catch (err) {
       const message = (err as Error).message;
       console.error('[cycle] failed:', message);
       await notifier.sendError(message);
+      uiSnapshot.lastError = message;
     }
     if (ONCE || stopping) break;
     console.log(`[runner] sleeping ${env.LOOP_INTERVAL_MS / 1000}s`);
     await sleep(env.LOOP_INTERVAL_MS);
   } while (!stopping);
 } finally {
+  await uiServer.close();
   await ctx.close();
   console.log('[runner] stopped');
 }
