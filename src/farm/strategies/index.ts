@@ -1,9 +1,11 @@
 import { standardStrategy } from './standard.js';
+import { d4twStrategy } from './d4tw.js';
 import type { FarmStrategy, StrategyId } from './types.js';
 
 const registry: Partial<Record<StrategyId, FarmStrategy>> = {
   standard: standardStrategy,
-  // 'd4tw' and 'maverickD3' will be added in their respective phases.
+  d4tw: d4twStrategy,
+  // 'maverickD3' will be added in a later phase.
 };
 
 export function getStrategy(id: StrategyId): FarmStrategy {
@@ -33,3 +35,4 @@ export {
   PartialBattleError,
 } from './types.js';
 export { standardStrategy } from './standard.js';
+export { d4twStrategy } from './d4tw.js';

@@ -14,6 +14,8 @@ export interface FarmableBattle {
   wallFor: number;
   wallDom: number;
   intensityScale: string;
+  /** Ground division number (1-4, 11 for air). Populated by all list functions. */
+  division: number;
 }
 
 export interface FarmableBattlesResult {
@@ -147,6 +149,7 @@ export async function listFarmableBattles(
         wallFor: divEntry.wall.for,
         wallDom: divEntry.wall.dom,
         intensityScale: divEntry.intensity_scale ?? 'unknown',
+        division: divEntry.div,
       });
     }
   }
@@ -286,6 +289,7 @@ export async function listMyCountryActiveBattles(
         wallFor: divEntry.wall.for,
         wallDom: divEntry.wall.dom,
         intensityScale: divEntry.intensity_scale ?? 'unknown',
+        division: divEntry.div,
       });
     }
   }

@@ -52,6 +52,10 @@ try {
       division: raw.division,
       residenceRegionId: raw.residenceRegionId,
       residenceCountryId,
+      strength: raw.strength,
+      rankNumber: raw.rankNumber,
+      hasMaverick: raw.hasMaverick,
+      currentCountryId: raw.currentCountryId,
     },
     {
       maxBattles: env.ERP_FARM_MAX_BATTLES,

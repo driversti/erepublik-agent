@@ -9,6 +9,14 @@ export interface FarmSessionInfo {
   division: number;
   residenceRegionId: number;
   residenceCountryId: number;
+  /** Citizen military strength (from SERVER_DATA). Null if unavailable. */
+  strength: number | null;
+  /** Numeric rank (0-based progression value). Null if unavailable. */
+  rankNumber: number | null;
+  /** Whether the citizen has the Maverick perk active. Null if unavailable. */
+  hasMaverick: boolean | null;
+  /** Country ID of the citizen's current physical location. Null if unavailable. */
+  currentCountryId: number | null;
 }
 
 export interface FarmSessionOptions {

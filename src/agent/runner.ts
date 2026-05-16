@@ -381,6 +381,10 @@ async function runCycle(
             division: ctxInfo.division,
             residenceRegionId: ctxInfo.residenceRegionId,
             residenceCountryId,
+            strength: ctxInfo.strength,
+            rankNumber: ctxInfo.rankNumber,
+            hasMaverick: ctxInfo.hasMaverick,
+            currentCountryId: ctxInfo.currentCountryId,
           },
           { maxBattles: decision.battlesThisSession, notify: (m) => notifier.send(m) },
         );
