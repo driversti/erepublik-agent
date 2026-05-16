@@ -64,13 +64,22 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
   const chunks: Buffer[] = [];
   let total = 0;
+  let tooBig = false;
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     total += buf.length;
     if (total > MAX_BODY_BYTES) {
-      throw Object.assign(new Error('Request body exceeds 64 KB'), { httpStatus: 413 });
+      // Don't throw mid-loop — throwing inside `for await` destroys the
+      // IncomingMessage stream before we can send a 413 response, and the
+      // client sees ECONNRESET instead. Break, drain, then throw.
+      tooBig = true;
+      break;
     }
     chunks.push(buf);
+  }
+  if (tooBig) {
+    req.resume();
+    throw Object.assign(new Error('Request body exceeds 64 KB'), { httpStatus: 413 });
   }
   const text = Buffer.concat(chunks).toString('utf8');
   if (text.trim() === '') return {};

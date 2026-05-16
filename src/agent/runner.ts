@@ -182,6 +182,12 @@ async function runCycle(
   );
 
   const settings = loadSettings();
+  if (settings.modeOverride != null && settings.modeOverride !== 'standard') {
+    console.warn(
+      `[cycle] settings.modeOverride="${settings.modeOverride}" is set but not yet implemented — ` +
+        `the runner will still use the 'standard' strategy. Phase 5/6 will wire d4tw / maverickD3.`,
+    );
+  }
   if (settings.paused) {
     uiSnapshot.lastUpdatedAt = Date.now();
     uiSnapshot.settings = settings;
