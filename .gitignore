@@ -7,4 +7,5 @@ sessions/
 .vscode/
 dist/
 .superpowers/
+config/settings.json
 

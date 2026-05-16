@@ -175,6 +175,13 @@ async function runCycle(
 
   const settings = loadSettings();
   if (settings.paused) {
+    // Skip BEFORE extractCitizenContext to avoid hammering the page every
+    // LOOP_INTERVAL_MS while paused. Trade-off: if a captcha appears during
+    // the paused window, it won't be detected until the operator unpauses
+    // and the first post-unpause cycle fails (captcha-corrupted CSRF). The
+    // runner self-heals on the next cycle. If captcha-while-paused becomes a
+    // real-world problem, move extractCitizenContext + handleCaptchaIfPresent
+    // above this check.
     console.log('[cycle] paused — skipping (toggle in config/settings.json or UI)');
     return;
   }
@@ -322,7 +329,7 @@ async function runCycle(
           fuelInInventory: fuelAtCycleStart,
         })
       : {
-          shouldFarm: false,
+          shouldFarm: false as const,
           reason: 'disabled via settings.farmEnabled',
           battlesThisSession: 0,
           diagnostics: {
