@@ -172,6 +172,16 @@ function bindControls() {
   if (def) def.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.targetDamageDefender = Number(e.target.value))));
   const maxB = document.getElementById('d4tw-maxBattles');
   if (maxB) maxB.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.maxBattlesPerSession = Number(e.target.value))));
+  const cdMin = document.getElementById('cooldown-min');
+  if (cdMin) cdMin.addEventListener('change', (e) => scheduleSave((s) => {
+    s.farmSession = s.farmSession || {};
+    s.farmSession.cooldownMinMinutes = Number(e.target.value);
+  }));
+  const cdMax = document.getElementById('cooldown-max');
+  if (cdMax) cdMax.addEventListener('change', (e) => scheduleSave((s) => {
+    s.farmSession = s.farmSession || {};
+    s.farmSession.cooldownMaxMinutes = Number(e.target.value);
+  }));
 }
 
 function renderSettingsForm(s) {
@@ -194,6 +204,10 @@ function renderSettingsForm(s) {
   if (maxB && document.activeElement !== maxB) maxB.value = String(s.d4tw.maxBattlesPerSession);
   const weapons = document.getElementById('d4tw-weapons');
   if (weapons) weapons.textContent = JSON.stringify(s.d4tw.weaponPriority);
+  const cdMin = document.getElementById('cooldown-min');
+  if (cdMin && document.activeElement !== cdMin) cdMin.value = String(s.farmSession?.cooldownMinMinutes ?? 30);
+  const cdMax = document.getElementById('cooldown-max');
+  if (cdMax && document.activeElement !== cdMax) cdMax.value = String(s.farmSession?.cooldownMaxMinutes ?? 90);
 }
 
 bindControls();

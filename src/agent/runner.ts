@@ -406,7 +406,10 @@ async function runCycle(
         );
         fuel.hitsLanded += verifiedHits;
         fuel.lastFarmedAt = new Date().toISOString();
-        fuel.nextEligibleAt = rollNextEligibleAt();
+        fuel.nextEligibleAt = rollNextEligibleAt(new Date(), Math.random, {
+          minMinutes: settings.farmSession.cooldownMinMinutes,
+          maxMinutes: settings.farmSession.cooldownMaxMinutes,
+        });
         console.log(
           `[cycle] farm session: stop=${result.stopReason}, wins=${result.wins.length}, ` +
             `consumed=${consumed} fuel (${fuelAtCycleStart}→${fuelAfter}), hits=${verifiedHits}, ` +

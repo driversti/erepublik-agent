@@ -21,7 +21,11 @@ const MAX_BATTLES_PER_SESSION = 3;
 /** Allow exceeding pace target by this many barrels before pumping the brakes. */
 const PACE_OVERSHOOT_TOLERANCE = 5;
 
-/** Cooldown range between farm sessions. Persisted in `nextEligibleAt`. */
+/**
+ * Default cooldown range between farm sessions (in minutes). Persisted in
+ * `nextEligibleAt`. Overridable via `settings.farmSession.cooldown{Min,Max}Minutes`
+ * or `ERP_SESSION_COOLDOWN_{MIN,MAX}_MIN` env vars on first run.
+ */
 export const SESSION_COOLDOWN_MIN_MIN = 30;
 export const SESSION_COOLDOWN_MAX_MIN = 90;
 
@@ -114,9 +118,21 @@ export function decideFarming(inputs: FarmInputs): FarmDecision {
  * After a session ends (success OR forced stop), pick the next eligibility
  * timestamp. Caller should persist this on `WeeklyFuelState.nextEligibleAt`.
  */
-export function rollNextEligibleAt(now: Date = new Date(), rng: () => number = Math.random): string {
-  const minMs = SESSION_COOLDOWN_MIN_MIN * 60_000;
-  const maxMs = SESSION_COOLDOWN_MAX_MIN * 60_000;
+export interface CooldownConfig {
+  minMinutes?: number;
+  maxMinutes?: number;
+}
+
+export function rollNextEligibleAt(
+  now: Date = new Date(),
+  rng: () => number = Math.random,
+  config: CooldownConfig = {},
+): string {
+  const minMin = Math.max(0, config.minMinutes ?? SESSION_COOLDOWN_MIN_MIN);
+  const maxMinRaw = Math.max(0, config.maxMinutes ?? SESSION_COOLDOWN_MAX_MIN);
+  const maxMin = Math.max(minMin, maxMinRaw);
+  const minMs = minMin * 60_000;
+  const maxMs = maxMin * 60_000;
   const jitterMs = minMs + rng() * (maxMs - minMs);
   return new Date(now.getTime() + jitterMs).toISOString();
 }

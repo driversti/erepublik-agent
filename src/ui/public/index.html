@@ -95,6 +95,23 @@
           <span>Farm enabled (skip farm gate when off)</span>
         </label>
       </div>
+      <div class="bg-gray-50 rounded p-3 text-sm mt-4">
+        <div class="font-medium mb-2">Farm session cooldown</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Min minutes between sessions</span>
+            <input id="cooldown-min" type="number" min="0" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Max minutes between sessions</span>
+            <input id="cooldown-max" type="number" min="0" class="border rounded px-2 py-1">
+          </label>
+        </div>
+        <p class="text-xs text-gray-600 mt-2">
+          ⓘ After each farm session the bot picks a random wait time in this range before
+          becoming eligible again. Defaults: 30–90 minutes.
+        </p>
+      </div>
       <details class="mt-4">
         <summary class="text-xs text-gray-500 cursor-pointer">Raw JSON</summary>
         <pre id="settings-json" class="text-xs bg-gray-50 p-3 rounded overflow-x-auto mt-2">loading…</pre>

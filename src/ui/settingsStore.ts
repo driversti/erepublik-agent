@@ -26,6 +26,16 @@ const TravelSettings = z.object({
   returnHomeMaxCC: z.number().int().positive().default(500),
 });
 
+const FarmSessionSettings = z
+  .object({
+    cooldownMinMinutes: z.number().int().min(0).default(30),
+    cooldownMaxMinutes: z.number().int().min(0).default(90),
+  })
+  .refine((s) => s.cooldownMaxMinutes >= s.cooldownMinMinutes, {
+    message: 'cooldownMaxMinutes must be >= cooldownMinMinutes',
+    path: ['cooldownMaxMinutes'],
+  });
+
 const DetectedState = z.object({
   division: z.number().int().nullable().default(null),
   hasMaverick: z.boolean().nullable().default(null),
@@ -54,6 +64,10 @@ export const Settings = z.object({
     maxTravelCC: 100,
     returnHomeAfterMinutes: 15,
     returnHomeMaxCC: 500,
+  })),
+  farmSession: FarmSessionSettings.default(() => ({
+    cooldownMinMinutes: 30,
+    cooldownMaxMinutes: 90,
   })),
   detected: DetectedState.default(() => ({
     division: null,
@@ -92,6 +106,10 @@ function buildInitial(): Settings {
       maxTravelCC: envNum('ERP_FARM_MAX_TRAVEL_CC', 100),
       returnHomeAfterMinutes: envNum('ERP_RETURN_HOME_AFTER_MINUTES', 15),
       returnHomeMaxCC: envNum('ERP_RETURN_HOME_MAX_CC', 500),
+    },
+    farmSession: {
+      cooldownMinMinutes: envNum('ERP_SESSION_COOLDOWN_MIN_MIN', 30),
+      cooldownMaxMinutes: envNum('ERP_SESSION_COOLDOWN_MAX_MIN', 90),
     },
   });
 }
