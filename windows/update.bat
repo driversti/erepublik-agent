@@ -32,13 +32,16 @@ mkdir "%STAGING%"
 echo.
 echo Querying GitHub for the latest release...
 
-REM Ask the GitHub API for the latest release; extract the tag and the
-REM Windows ZIP asset's download URL. Output format: "<version>|<url>".
-set "RESPONSE="
-for /f "usebackq delims=" %%i in (`powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ErrorActionPreference='Stop'; try { $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers @{ 'User-Agent' = 'erepublik-agent-updater' }; $tag = $r.tag_name -replace '^v',''; $asset = $r.assets ^| Where-Object { $_.name -like '*windows-x64.zip' } ^| Select-Object -First 1; if (-not $asset) { throw 'No Windows ZIP asset found in latest release.' }; Write-Output ($tag + '|' + $asset.browser_download_url) } catch { Write-Error $_.Exception.Message; exit 1 }"`) do set "RESPONSE=%%i"
+REM Ask the GitHub API for the latest release; have PowerShell write the
+REM tag (line 1) and the Windows ZIP download URL (line 2) to a temp file.
+REM Going via a file avoids the for-/f-backtick quoting trap where cmd
+REM reinterprets `|` characters inside the captured command line even when
+REM they sit inside double quotes.
+set "METAFILE=%STAGING%\release-meta.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ErrorActionPreference='Stop'; try { $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers @{ 'User-Agent' = 'erepublik-agent-updater' }; $tag = $r.tag_name -replace '^v',''; $asset = $r.assets | Where-Object { $_.name -like '*windows-x64.zip' } | Select-Object -First 1; if (-not $asset) { throw 'No Windows ZIP asset found in latest release.' }; Set-Content -Path '%METAFILE%' -Encoding ASCII -Value @($tag, $asset.browser_download_url) } catch { Write-Error $_.Exception.Message; exit 1 }"
 
-if not defined RESPONSE (
+if errorlevel 1 (
     echo.
     echo ERROR: Could not query GitHub. Check your internet connection.
     echo If you are behind a corporate firewall or VPN, try a personal network.
@@ -47,9 +50,37 @@ if not defined RESPONSE (
     exit /b 1
 )
 
-for /f "tokens=1,2 delims=|" %%a in ("!RESPONSE!") do (
-    set "LATEST_VERSION=%%a"
-    set "DOWNLOAD_URL=%%b"
+if not exist "%METAFILE%" (
+    echo.
+    echo ERROR: GitHub query returned no metadata file.
+    rmdir /s /q "%STAGING%"
+    pause
+    exit /b 1
+)
+
+set "LATEST_VERSION="
+set "DOWNLOAD_URL="
+set /a _meta_line=0
+for /f "usebackq delims=" %%i in ("%METAFILE%") do (
+    set /a _meta_line+=1
+    if !_meta_line! equ 1 set "LATEST_VERSION=%%i"
+    if !_meta_line! equ 2 set "DOWNLOAD_URL=%%i"
+)
+
+if not defined LATEST_VERSION (
+    echo.
+    echo ERROR: Could not parse latest version from GitHub response.
+    rmdir /s /q "%STAGING%"
+    pause
+    exit /b 1
+)
+
+if not defined DOWNLOAD_URL (
+    echo.
+    echo ERROR: Could not parse download URL from GitHub response.
+    rmdir /s /q "%STAGING%"
+    pause
+    exit /b 1
 )
 
 echo Current version : %CURRENT_VERSION%
