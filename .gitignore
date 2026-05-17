@@ -8,4 +8,5 @@ sessions/
 dist/
 .superpowers/
 config/settings.json
+.claude/settings.local.json
 
