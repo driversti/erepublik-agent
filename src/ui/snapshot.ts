@@ -9,9 +9,13 @@ export interface UiSnapshot {
   lastFarmReason: string | null;
   /** Game day at last update. */
   day: number | null;
+  /** Local profile slug (ERP_ACCOUNT_SLUG) — stable identifier across renames. */
+  accountSlug: string | null;
   /** Citizen context from extractCitizenContext (subset to avoid leaking csrf, page state). */
   citizen: {
     id: number | null;
+    /** In-game nickname from erepublik.citizen.name. */
+    name: string | null;
     countryId: number | null;
     division: number | null;
     energy: number | null;
@@ -49,8 +53,10 @@ export function createSnapshot(): UiSnapshot {
     lastCycleStartedAt: null,
     lastFarmReason: null,
     day: null,
+    accountSlug: null,
     citizen: {
       id: null,
+      name: null,
       countryId: null,
       division: null,
       energy: null,

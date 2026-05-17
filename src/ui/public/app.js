@@ -50,10 +50,22 @@ function renderStatus(s) {
     setText('last-updated', 'no cycle yet');
   }
 
+  // Page title + header label: in-game name first (recognisable), local slug
+  // second (stable identifier across renames).
+  const nameLabel = s.citizen?.name
+    ? `${s.citizen.name}${s.accountSlug ? ` (${s.accountSlug})` : ''}`
+    : (s.accountSlug ?? '—');
+  document.title = s.citizen?.name
+    ? `${s.citizen.name} · erepublik-agent`
+    : (s.accountSlug ? `${s.accountSlug} · erepublik-agent` : 'erepublik-agent');
+  setText('header-account', nameLabel);
+
   const grid = document.getElementById('status-grid');
   const rows = [
     ['Day', s.day ?? '—'],
     ['Mode', s.settings?.modeOverride ?? 'auto'],
+    ['Account', s.accountSlug ?? '—'],
+    ['Name', s.citizen.name ?? '—'],
     ['Citizen', s.citizen.id ?? '—'],
     ['Country', s.citizen.countryId ?? '—'],
     ['Division', s.citizen.division ?? '—'],

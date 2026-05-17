@@ -220,8 +220,9 @@ async function runCycle(
   if (countryId == null) {
     throw new Error('countryId not found in browser context and ERP_COUNTRY_ID env not set');
   }
+  const nameTag = ctxInfo.name ? `${ctxInfo.name} (${env.ERP_ACCOUNT_SLUG})` : env.ERP_ACCOUNT_SLUG;
   console.log(
-    `[cycle] citizen: id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}` +
+    `[cycle] citizen: ${nameTag}, id=${ctxInfo.citizenId ?? '?'}, country=${countryId}${ctxInfo.countryId == null ? ' (from env)' : ''}` +
       `, div=${ctxInfo.division ?? '?'}, level=${ctxInfo.userLevel ?? '?'}` +
       `, energy=${ctxInfo.energy ?? '?'}/${ctxInfo.energyPoolLimit ?? '?'}` +
       `, fuel=${ctxInfo.fuelLeft ?? '?'}/${ctxInfo.maxFuel ?? '?'}` +
@@ -488,8 +489,10 @@ async function runCycle(
     hitsLanded: fuel.hitsLanded,
     cyclesSkipped: fuel.cyclesSkipped,
   };
+  uiSnapshot.accountSlug = env.ERP_ACCOUNT_SLUG;
   uiSnapshot.citizen = {
     id: ctxInfo.citizenId,
+    name: ctxInfo.name,
     countryId: ctxInfo.countryId,
     division: ctxInfo.division,
     energy: ctxInfo.energy,
@@ -522,8 +525,9 @@ async function runCycle(
 }
 
 const uiSnapshot = createSnapshot();
+uiSnapshot.accountSlug = env.ERP_ACCOUNT_SLUG;
 const uiServer = await startUiServer({ getSnapshot: () => uiSnapshot });
-console.log(`[runner] UI available at http://localhost:${uiServer.port}`);
+console.log(`[runner] account=${env.ERP_ACCOUNT_SLUG}, UI at http://localhost:${uiServer.port}`);
 
 const ctx = await openSession({ accountSlug: env.ERP_ACCOUNT_SLUG, headed: env.HEADED === 'true' });
 const notifier = new TelegramNotifier({

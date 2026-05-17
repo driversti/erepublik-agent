@@ -57,6 +57,9 @@ export interface CitizenContext {
   strength: number | null;
   rankNumber: number | null;
   hasMaverick: boolean | null;
+  /** In-game nickname from `erepublik.citizen.name`. Useful for telling
+   *  multi-account installs apart in logs/UI. Null if the global was missing. */
+  name: string | null;
 }
 
 export interface ExtractOptions {
@@ -101,6 +104,7 @@ export async function extractCitizenContext(
       country?: { id?: number };
       citizenId?: number;
       id?: number;
+      name?: string;
       division?: number;
       residence?: { regionId?: number; countryId?: number };
       regionLocationId?: number;
@@ -131,6 +135,7 @@ export async function extractCitizenContext(
       null;
 
     const citizenId = c?.citizenId ?? c?.id ?? null;
+    const name = typeof c?.name === 'string' && c.name.length > 0 ? c.name : null;
     const division = typeof c?.division === 'number' ? c.division : null;
     const residenceRegionId = typeof c?.residence?.regionId === 'number' ? c.residence.regionId : null;
     const residenceCountryId =
@@ -185,6 +190,7 @@ export async function extractCitizenContext(
       csrf,
       countryId,
       citizenId,
+      name,
       division,
       residenceRegionId,
       residenceCountryId,
@@ -233,6 +239,7 @@ export async function extractCitizenContext(
     csrf: info.csrf,
     countryId: info.countryId ?? null,
     citizenId,
+    name: info.name ?? null,
     division: info.division ?? null,
     residenceRegionId: info.residenceRegionId ?? null,
     residenceCountryId: info.residenceCountryId ?? null,
