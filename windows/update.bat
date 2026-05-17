@@ -36,7 +36,7 @@ REM Ask the GitHub API for the latest release; extract the tag and the
 REM Windows ZIP asset's download URL. Output format: "<version>|<url>".
 set "RESPONSE="
 for /f "usebackq delims=" %%i in (`powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$ErrorActionPreference='Stop'; try { $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers @{ 'User-Agent' = 'erepublik-agent-updater' }; $tag = $r.tag_name -replace '^v',''; $asset = $r.assets ^| Where-Object { $_.name -like '*windows-x64.zip' } ^| Select-Object -First 1; if (-not $asset) { throw 'No Windows ZIP asset found in latest release.' }; Write-Output (\"$tag|\" + $asset.browser_download_url) } catch { Write-Error $_.Exception.Message; exit 1 }"`) do set "RESPONSE=%%i"
+    "$ErrorActionPreference='Stop'; try { $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%REPO%/releases/latest' -Headers @{ 'User-Agent' = 'erepublik-agent-updater' }; $tag = $r.tag_name -replace '^v',''; $asset = $r.assets ^| Where-Object { $_.name -like '*windows-x64.zip' } ^| Select-Object -First 1; if (-not $asset) { throw 'No Windows ZIP asset found in latest release.' }; Write-Output ($tag + '|' + $asset.browser_download_url) } catch { Write-Error $_.Exception.Message; exit 1 }"`) do set "RESPONSE=%%i"
 
 if not defined RESPONSE (
     echo.
