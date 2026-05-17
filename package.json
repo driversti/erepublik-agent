@@ -1,6 +1,6 @@
 {
   "name": "erepublik-agent",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     "debug-headers": "tsx src/debugHeaders.ts",
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/ui/public','dist/ui/public',{recursive:true})\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
