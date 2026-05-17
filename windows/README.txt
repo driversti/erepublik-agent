@@ -43,8 +43,19 @@ breaks and you need help, send the most recent log file.
 
 Updating
 --------
-Download the new ZIP, extract over the existing folder. Your
-sessions\ and config\ contents are preserved.
+Recommended: double-click update.bat.
+   It downloads the latest release from GitHub, replaces only the
+   bot code (app\ + launcher .bat files), and leaves config\,
+   sessions\, chromium-cache\, and logs\ alone. You will NOT need
+   to log in again. Stop the bot first (close start.bat window,
+   or run stop.bat).
+
+Manual fallback: download the new ZIP from the GitHub Releases
+   page and extract over the existing folder, choosing "Skip" for
+   config\, sessions\, chromium-cache\, and logs\. Do NOT run
+   setup.bat or bootstrap.bat afterwards -- doing so will overwrite
+   your config and trigger a fresh login (which increases the
+   chance of getting your IP rate-limited).
 
 Troubleshooting
 ---------------
