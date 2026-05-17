@@ -90,6 +90,13 @@ if defined BLOCKED_RAW (
     )
 )
 
+:: Leak FARM_BLOCKED_CSV out of the current setlocal scope. The next
+:: :prompt call below does endlocal/setlocal and would otherwise discard
+:: it -- leaving blocked-countries silently missing from .env. We always
+:: leak (even when empty); the writer block below filters on non-empty.
+endlocal & set "FARM_BLOCKED_CSV=%FARM_BLOCKED_CSV%"
+setlocal enabledelayedexpansion
+
 echo.
 echo --- Auto return-home ---
 call :prompt "Return home after how many minutes abroad (0 disables)" "%CUR_RETURN_HOME_MIN%" RETURN_HOME_MIN
@@ -120,7 +127,7 @@ echo Writing %ENVFILE%...
     echo LOOP_INTERVAL_MS=600000
     echo ERP_FARM_MAX_TRAVEL_CC=!FARM_MAX_CC!
     echo ERP_FARM_MIN_FUEL=!FARM_MIN_FUEL!
-    if defined FARM_BLOCKED_CSV echo ERP_FARM_BLOCKED_COUNTRIES=!FARM_BLOCKED_CSV!
+    if not "!FARM_BLOCKED_CSV!"=="" echo ERP_FARM_BLOCKED_COUNTRIES=!FARM_BLOCKED_CSV!
     echo ERP_RETURN_HOME_AFTER_MINUTES=!RETURN_HOME_MIN!
     echo ERP_RETURN_HOME_MAX_CC=!RETURN_HOME_MAX_CC!
     if defined TG_TOKEN echo TELEGRAM_BOT_TOKEN=!TG_TOKEN!
@@ -148,14 +155,25 @@ goto :eof
 
 :prompt_password
 :: Use PowerShell to read masked input. Default visible in prompt.
+::
+:: We capture PowerShell's output via a temp file rather than `for /f` because
+:: when stdout is redirected, Read-Host can emit the prompt label (or other
+:: host chatter) into the captured stream, which then overwrites _VAL with
+:: junk instead of leaving it on the default. A temp file isolates the
+:: password value cleanly.
 set "_DEFAULT=%~2"
+set "_VAL=%_DEFAULT%"
 if "%_DEFAULT%"=="" (
     set "_LABEL=%~1"
 ) else (
     set "_LABEL=%~1 [press Enter to keep current]"
 )
-for /f "delims=" %%a in ('powershell -NoProfile -Command "$p = Read-Host -AsSecureString '!_LABEL!'; $b = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($p); [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($b)"') do set "_VAL=%%a"
-if "%_VAL%"=="" set "_VAL=%_DEFAULT%"
+set "_TMPFILE=%TEMP%\erp-setup-pwd-%RANDOM%-%RANDOM%.txt"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Read-Host -AsSecureString '!_LABEL!'; $b = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($p); $s = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($b); [System.IO.File]::WriteAllText('!_TMPFILE!', $s, [System.Text.UTF8Encoding]::new($false))" >nul
+if exist "!_TMPFILE!" (
+    for /f "usebackq delims=" %%a in ("!_TMPFILE!") do set "_VAL=%%a"
+    del /q "!_TMPFILE!" >nul 2>&1
+)
 endlocal & set "%~3=%_VAL%"
 setlocal enabledelayedexpansion
 goto :eof
