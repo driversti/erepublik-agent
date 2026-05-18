@@ -18,6 +18,9 @@
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/ui/public','dist/ui/public',{recursive:true})\"",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "start:electron": "npm run build && npm run build:electron && electron electron-dist/main.js",
+    "dist:electron": "npm run build && npm run build:electron && electron-builder --win nsis --x64",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -25,11 +28,14 @@
   "dependencies": {
     "cloakbrowser": "^0.3.28",
     "dotenv": "^16.4.5",
+    "electron-updater": "^6.8.3",
     "playwright-core": "^1.49.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "electron": "^31.7.7",
+    "electron-builder": "^25.1.8",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^4.1.6"
