@@ -15,8 +15,13 @@ export const WEEKLY_BUDGET = 70;
  */
 export const ENERGY_PER_BATTLE = 66;
 
-/** Soft cap on battles within a single farm session. */
-const MAX_BATTLES_PER_SESSION = 3;
+/**
+ * Default soft cap on battles within a single farm session, used when the
+ * caller doesn't supply `FarmInputs.maxBattlesPerSession`. The live runner
+ * sources this from `settings.emptyDiv.maxBattlesPerSession`, which is
+ * UI-editable and `.env`-seedable via `ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION`.
+ */
+export const DEFAULT_MAX_BATTLES_PER_SESSION = 3;
 
 /** Allow exceeding pace target by this many barrels before pumping the brakes. */
 const PACE_OVERSHOOT_TOLERANCE = 5;
@@ -35,6 +40,12 @@ export interface FarmInputs {
   poolEnergy: number;
   /** From `getDeployInventory` — barrels of vehicle fuel in inventory. */
   fuelInInventory: number;
+  /**
+   * Hard cap on battles attempted in a single session. Runner passes
+   * `settings.emptyDiv.maxBattlesPerSession`; falls back to
+   * `DEFAULT_MAX_BATTLES_PER_SESSION` when omitted.
+   */
+  maxBattlesPerSession?: number;
   /** Defaults to `new Date()` — pass explicit Date for tests. */
   now?: Date;
 }
@@ -102,7 +113,11 @@ export function decideFarming(inputs: FarmInputs): FarmDecision {
   const fuelBudget = Math.min(inputs.fuelInInventory, remaining);
   // If we're behind pace, allow a small catch-up; otherwise just stay on rhythm.
   const paceBudget = Math.max(1, target - spent + 2);
-  const battlesThisSession = Math.min(MAX_BATTLES_PER_SESSION, energyBudget, fuelBudget, paceBudget);
+  const sessionCap = Math.max(
+    1,
+    Math.floor(inputs.maxBattlesPerSession ?? DEFAULT_MAX_BATTLES_PER_SESSION),
+  );
+  const battlesThisSession = Math.min(sessionCap, energyBudget, fuelBudget, paceBudget);
 
   if (battlesThisSession <= 0) return no('session size rounded to 0');
 

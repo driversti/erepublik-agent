@@ -342,6 +342,7 @@ async function runCycle(
           weekly: fuel,
           poolEnergy: ctxInfo.energy ?? 0,
           fuelInInventory: fuelAtCycleStart,
+          maxBattlesPerSession: settings.emptyDiv.maxBattlesPerSession,
         })
       : {
           shouldFarm: false as const,

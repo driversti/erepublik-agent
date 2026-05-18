@@ -184,6 +184,14 @@ function bindControls() {
   if (def) def.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.targetDamageDefender = Number(e.target.value))));
   const maxB = document.getElementById('d4tw-maxBattles');
   if (maxB) maxB.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.maxBattlesPerSession = Number(e.target.value))));
+  const edMaxB = document.getElementById('emptyDiv-maxBattles');
+  if (edMaxB)
+    edMaxB.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.emptyDiv = s.emptyDiv || {};
+        s.emptyDiv.maxBattlesPerSession = Number(e.target.value);
+      }),
+    );
   const cdMin = document.getElementById('cooldown-min');
   if (cdMin) cdMin.addEventListener('change', (e) => scheduleSave((s) => {
     s.farmSession = s.farmSession || {};
@@ -214,6 +222,9 @@ function renderSettingsForm(s) {
   if (def && document.activeElement !== def) def.value = String(s.d4tw.targetDamageDefender);
   const maxB = document.getElementById('d4tw-maxBattles');
   if (maxB && document.activeElement !== maxB) maxB.value = String(s.d4tw.maxBattlesPerSession);
+  const edMaxB = document.getElementById('emptyDiv-maxBattles');
+  if (edMaxB && document.activeElement !== edMaxB)
+    edMaxB.value = String(s.emptyDiv?.maxBattlesPerSession ?? 3);
   const weapons = document.getElementById('d4tw-weapons');
   if (weapons) weapons.textContent = JSON.stringify(s.d4tw.weaponPriority);
   const cdMin = document.getElementById('cooldown-min');

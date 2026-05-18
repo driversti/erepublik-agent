@@ -102,6 +102,12 @@ function envNum(key: string, fallback: number): number {
  */
 function buildInitial(): Settings {
   return Settings.parse({
+    emptyDiv: {
+      maxBattlesPerSession: envNum('ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION', 3),
+    },
+    d4tw: {
+      maxBattlesPerSession: envNum('ERP_D4TW_MAX_BATTLES_PER_SESSION', 1),
+    },
     travel: {
       maxTravelCC: envNum('ERP_FARM_MAX_TRAVEL_CC', 100),
       returnHomeAfterMinutes: envNum('ERP_RETURN_HOME_AFTER_MINUTES', 15),

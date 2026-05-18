@@ -60,6 +60,26 @@ describe('settingsStore', () => {
       }
     });
 
+    it('migrates ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION from .env on first run', () => {
+      process.env.ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION = '5';
+      try {
+        const settings = loadSettings();
+        expect(settings.emptyDiv.maxBattlesPerSession).toBe(5);
+      } finally {
+        delete process.env.ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION;
+      }
+    });
+
+    it('migrates ERP_D4TW_MAX_BATTLES_PER_SESSION from .env on first run', () => {
+      process.env.ERP_D4TW_MAX_BATTLES_PER_SESSION = '4';
+      try {
+        const settings = loadSettings();
+        expect(settings.d4tw.maxBattlesPerSession).toBe(4);
+      } finally {
+        delete process.env.ERP_D4TW_MAX_BATTLES_PER_SESSION;
+      }
+    });
+
     it('migrates ERP_RETURN_HOME_MAX_CC from .env on first run', () => {
       process.env.ERP_RETURN_HOME_MAX_CC = '1000';
       try {

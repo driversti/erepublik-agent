@@ -49,6 +49,20 @@
           </select>
         </label>
       </div>
+      <div class="bg-gray-50 rounded p-3 text-sm mb-3">
+        <div class="font-medium mb-2">Empty-division settings (Standard / Maverick-D3)</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Max battles per session</span>
+            <input id="emptyDiv-maxBattles" type="number" min="1" max="10" class="border rounded px-2 py-1">
+          </label>
+        </div>
+        <p class="text-xs text-amber-800 bg-amber-50 rounded p-2 mt-2">
+          ⓘ Hard cap on empty-division battles per farm cycle (~10 min). Energy / fuel / weekly-pace
+          limits may bring the effective number lower. Default 3. Env seed:
+          <code>ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION</code>.
+        </p>
+      </div>
       <div class="bg-gray-50 rounded p-3 text-sm">
         <div class="font-medium mb-2">D4-TW settings</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
