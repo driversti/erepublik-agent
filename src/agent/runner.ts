@@ -37,6 +37,7 @@ import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 import { sleepUntilWake } from '../ui/sleepUntilWake.js';
 import { appendHistory } from '../ui/historyStore.js';
+import { createStopController } from './stopController.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -74,13 +75,10 @@ const cleanupPid = (): void => {
   }
 };
 process.on('exit', cleanupPid);
-// SIGINT is handled by the existing graceful-shutdown handler later in this
-// file; it sets `stopping = true`, lets the current cycle finish, and exits
-// cleanly — at which point our `exit` listener above fires `cleanupPid()`.
-process.on('SIGTERM', () => {
-  cleanupPid();
-  process.exit(143);
-});
+// Both SIGINT and SIGTERM are handled by the graceful-shutdown handler later
+// in this file; they set `stopCtrl.requestStop()`, let the current cycle
+// finish, and exit cleanly — at which point our `exit` listener above fires
+// `cleanupPid()`.
 
 if (env.ERP_FILE_LOGGING === 'true') {
   // Daily rotation matches the eRepublik day boundary the agent already uses.
@@ -549,13 +547,17 @@ const captchaCfg: CaptchaConfig = {
   notify: (m) => notifier.send(m),
 };
 
-let stopping = false;
+const stopCtrl = createStopController();
 let lastMode: string | null = null;
-process.on('SIGINT', () => {
-  if (stopping) process.exit(1);
-  stopping = true;
-  console.log('\n[runner] SIGINT received — finishing current cycle then exiting');
-});
+function handleStopSignal(name: string) {
+  if (!stopCtrl.requestStop()) {
+    // Second Ctrl-C / SIGTERM → hard-exit.
+    process.exit(1);
+  }
+  console.log(`\n[runner] ${name} received — finishing current cycle then exiting`);
+}
+process.on('SIGINT', () => handleStopSignal('SIGINT'));
+process.on('SIGTERM', () => handleStopSignal('SIGTERM'));
 
 try {
   do {
@@ -568,11 +570,11 @@ try {
       appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
     }
-    if (ONCE || stopping) break;
+    if (ONCE || stopCtrl.isStopping()) break;
     console.log(`[runner] sleeping ${env.LOOP_INTERVAL_MS / 1000}s (wake on settings change)`);
     const reason = await sleepUntilWake(env.LOOP_INTERVAL_MS, join(configDir(), 'settings.json'));
     if (reason === 'file-changed') console.log('[runner] woken early — settings.json changed');
-  } while (!stopping);
+  } while (!stopCtrl.isStopping());
 } finally {
   await uiServer.close();
   await ctx.close();
