@@ -9,6 +9,13 @@ loadDotenv({ path: join(configDir(), '.env') });
 // (developer workflow). Dotenv silently ignores missing files.
 loadDotenv();
 
+const HARD_TIMEOUT_MS = 10 * 60 * 1000;
+const hardTimeout = setTimeout(() => {
+  console.error('[bootstrap] FAILED: hard timeout reached (10 min). User may have closed the window.');
+  process.exit(2);
+}, HARD_TIMEOUT_MS);
+hardTimeout.unref();
+
 const Env = z.object({
   ERP_LOGIN: z.string().email(),
   ERP_PASSWORD: z.string().min(1),
@@ -72,3 +79,4 @@ console.log(`[bootstrap] ✅ logged in; erpk cookie present (length=${erpk.value
 console.log('[bootstrap] session persisted in profile dir; safe to close');
 
 await ctx.close();
+process.exit(0);
