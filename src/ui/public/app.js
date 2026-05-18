@@ -204,6 +204,28 @@ function bindControls() {
   }));
 }
 
+function bindRunNowButton() {
+  const btn = document.getElementById('btn-run-now');
+  if (!btn) return;
+  const hint = document.getElementById('run-now-hint');
+  const defaultHint = hint?.textContent ?? '';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    if (hint) hint.textContent = 'Requested — runner will wake on next sleep tick.';
+    try {
+      const r = await fetch('/api/run-now', { method: 'POST' });
+      if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 100)}`);
+    } catch (err) {
+      if (hint) hint.textContent = `Failed: ${err.message}`;
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        if (hint) hint.textContent = defaultHint;
+      }, 3000);
+    }
+  });
+}
+
 function renderSettingsForm(s) {
   lastSettings = s;
   const paused = document.getElementById('toggle-paused');
@@ -234,3 +256,4 @@ function renderSettingsForm(s) {
 }
 
 bindControls();
+bindRunNowButton();

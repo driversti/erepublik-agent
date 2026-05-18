@@ -110,6 +110,17 @@
           <span>Farm enabled (skip farm gate when off)</span>
         </label>
       </div>
+      <div class="mt-3 flex items-center gap-3">
+        <button
+          id="btn-run-now"
+          type="button"
+          class="px-3 py-1.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+          Run now
+        </button>
+        <span id="run-now-hint" class="text-xs text-gray-500">
+          Wakes the runner immediately if it's sleeping.
+        </span>
+      </div>
       <div class="bg-gray-50 rounded p-3 text-sm mt-4">
         <div class="font-medium mb-2">Farm session cooldown</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
