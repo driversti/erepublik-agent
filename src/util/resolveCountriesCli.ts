@@ -47,4 +47,6 @@ if (result.unknown.length > 0) {
 }
 
 // Success: print CSV of resolved IDs (or empty line if nothing was provided).
-process.stdout.write(result.ids.join(','));
+// Trailing newline keeps Windows `for /f` cmd-substitution captures consistent
+// -- without it, callers occasionally miss the last partial line.
+process.stdout.write(result.ids.join(',') + '\n');

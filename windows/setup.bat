@@ -79,15 +79,23 @@ if /i "!BLOCKED_RAW!"=="list" (
     echo.
     goto blocked_prompt
 )
-if defined BLOCKED_RAW (
-    if not "!BLOCKED_RAW!"=="" (
-        for /f "delims=" %%r in ('node\node.exe app\dist\util\resolveCountriesCli.js "!BLOCKED_RAW!" 2^>nul') do set "FARM_BLOCKED_CSV=%%r"
-        if errorlevel 1 (
-            node\node.exe app\dist\util\resolveCountriesCli.js "!BLOCKED_RAW!"
-            echo Please try again.
-            goto blocked_prompt
-        )
+:: Run node directly with stdout captured to a temp file rather than wrapping
+:: in `for /f ('...')`. The for-loop variant ran the inner command through a
+:: child cmd shell whose exit code did not always propagate to errorlevel
+:: cleanly, producing spurious "try again" messages on valid input. With a
+:: direct call, `if errorlevel 1` reflects node's own exit code without any
+:: intermediary.
+if defined BLOCKED_RAW if not "!BLOCKED_RAW!"=="" (
+    set "_BLOCKED_TMP=%TEMP%\erp-setup-blocked-%RANDOM%-%RANDOM%.txt"
+    node\node.exe app\dist\util\resolveCountriesCli.js "!BLOCKED_RAW!" >"!_BLOCKED_TMP!" 2>nul
+    if errorlevel 1 (
+        if exist "!_BLOCKED_TMP!" del /q "!_BLOCKED_TMP!" >nul 2>&1
+        node\node.exe app\dist\util\resolveCountriesCli.js "!BLOCKED_RAW!"
+        echo Please try again.
+        goto blocked_prompt
     )
+    set /p FARM_BLOCKED_CSV=<"!_BLOCKED_TMP!"
+    del /q "!_BLOCKED_TMP!" >nul 2>&1
 )
 
 echo.
