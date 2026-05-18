@@ -246,7 +246,8 @@ describe('UI server', () => {
       const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
       try {
         const before = await (await fetch(`http://127.0.0.1:${handle.port}/api/settings`)).json();
-        await fetch(`http://127.0.0.1:${handle.port}/api/run-now`, { method: 'POST' });
+        const post = await fetch(`http://127.0.0.1:${handle.port}/api/run-now`, { method: 'POST' });
+        expect(post.ok).toBe(true);
         const after = await (await fetch(`http://127.0.0.1:${handle.port}/api/settings`)).json();
         expect(after).toEqual(before);
       } finally {
