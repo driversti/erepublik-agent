@@ -1,0 +1,28 @@
+appId: live.yurii.erepublik-agent
+productName: erepublik-agent
+copyright: Copyright © 2026 Yurii Chekhotskyi
+directories:
+  output: release
+  buildResources: electron/icons
+files:
+  - dist/**
+  - electron-dist/**
+  - data/**
+  - package.json
+  - node_modules/**
+asarUnpack:
+  - node_modules/cloakbrowser/**
+  - node_modules/playwright-core/**
+win:
+  target: nsis
+  icon: electron/icons/icon.ico
+  artifactName: erepublik-agent-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: erepublik-agent
+publish:
+  provider: github
+  releaseType: release

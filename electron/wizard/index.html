@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>erepublik-agent setup</title>
+  <link rel="stylesheet" href="wizard.css" />
+</head>
+<body>
+  <div class="stepper">
+    <div class="dot active" data-step="1"></div>
+    <div class="dot" data-step="2"></div>
+    <div class="dot" data-step="3"></div>
+  </div>
+
+  <!-- Step 1: Account & tuning -->
+  <section class="step active" data-step="1">
+    <h1>Welcome — configure your account</h1>
+
+    <div class="import-banner" id="import-banner">
+      Already running the old ZIP version?
+      <button type="button" id="import-link" class="link-button">Import existing setup →</button>
+    </div>
+
+    <fieldset>
+      <legend>Account</legend>
+      <div class="row">
+        <div>
+          <label for="email">eRepublik email</label>
+          <input id="email" type="email" required />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input id="password" type="password" required />
+        </div>
+      </div>
+      <label for="slug">Account label</label>
+      <input id="slug" type="text" value="main" />
+    </fieldset>
+
+    <fieldset>
+      <legend>Daily actions</legend>
+      <label for="maxFoodPrice">Max Q1 food price</label>
+      <input id="maxFoodPrice" type="number" step="0.1" value="3.0" />
+    </fieldset>
+
+    <fieldset>
+      <legend>Gold farming</legend>
+      <div class="row">
+        <div>
+          <label for="maxTravel">Max travel cost per battle (CC)</label>
+          <input id="maxTravel" type="number" value="400" />
+        </div>
+        <div>
+          <label for="minFuel">Min fuel barrels to keep</label>
+          <input id="minFuel" type="number" value="10" />
+        </div>
+      </div>
+      <label for="blockedCountries">Blocked countries</label>
+      <input id="blockedCountries" type="text" placeholder="Poland, Romania, Argentina" />
+      <div id="blockedCountries-error" class="error"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Auto return-home</legend>
+      <div class="row">
+        <div>
+          <label for="returnAfter">Return home after (minutes; 0 disables)</label>
+          <input id="returnAfter" type="number" value="15" />
+        </div>
+        <div>
+          <label for="returnMax">Max return-home travel cost (CC)</label>
+          <input id="returnMax" type="number" value="500" />
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Telegram notifications (optional)</legend>
+      <div class="row">
+        <div>
+          <label for="tgToken">Bot token</label>
+          <input id="tgToken" type="text" />
+        </div>
+        <div>
+          <label for="tgChat">Chat ID</label>
+          <input id="tgChat" type="text" />
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Captcha solver (optional)</legend>
+      <label for="captchaProvider">Provider</label>
+      <select id="captchaProvider">
+        <option value="none">none</option>
+        <option value="2captcha">2captcha</option>
+      </select>
+      <div id="captchaKeyWrap" style="display:none; margin-top:12px;">
+        <label for="captchaKey">2captcha API key</label>
+        <input id="captchaKey" type="text" />
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <span></span>
+      <button id="step1-next">Next</button>
+    </div>
+  </section>
+
+  <!-- Step 2: Sign in -->
+  <section class="step" data-step="2">
+    <h1>Sign in to eRepublik</h1>
+    <p>A browser window will open. Sign in manually with your eRepublik account; solve any Cloudflare or captcha challenge. The window will close automatically once you're signed in.</p>
+    <div class="actions">
+      <button id="step2-open" class="ghost">Open login window</button>
+    </div>
+    <pre class="log" id="step2-log"></pre>
+    <div class="actions">
+      <button id="step2-back" class="ghost">Back</button>
+      <button id="step2-retry" style="display:none;">Retry</button>
+    </div>
+  </section>
+
+  <!-- Step 3: Done -->
+  <section class="step" data-step="3">
+    <h1>Almost ready</h1>
+    <label style="display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" id="autostart" />
+      Start automatically when Windows starts
+    </label>
+    <div class="actions">
+      <button id="step3-start">Start bot</button>
+    </div>
+  </section>
+
+  <script type="module" src="wizard.js"></script>
+</body>
+</html>

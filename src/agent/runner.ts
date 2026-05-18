@@ -30,13 +30,15 @@ import { collectMissionRewards } from '../tools/claim.js';
 import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
-import { loadSettings } from '../ui/settingsStore.js';
+import { loadSettings, saveSettings } from '../ui/settingsStore.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 import { travelHome } from '../tools/travel.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 import { sleepUntilWake } from '../ui/sleepUntilWake.js';
 import { appendHistory } from '../ui/historyStore.js';
+import { createStopController } from './stopController.js';
+import { attachElectronBridge, type IpcPort } from './electronBridge.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -74,13 +76,10 @@ const cleanupPid = (): void => {
   }
 };
 process.on('exit', cleanupPid);
-// SIGINT is handled by the existing graceful-shutdown handler later in this
-// file; it sets `stopping = true`, lets the current cycle finish, and exits
-// cleanly — at which point our `exit` listener above fires `cleanupPid()`.
-process.on('SIGTERM', () => {
-  cleanupPid();
-  process.exit(143);
-});
+// Both SIGINT and SIGTERM are handled by the graceful-shutdown handler later
+// in this file; they set `stopCtrl.requestStop()`, let the current cycle
+// finish, and exit cleanly — at which point our `exit` listener above fires
+// `cleanupPid()`.
 
 if (env.ERP_FILE_LOGGING === 'true') {
   // Daily rotation matches the eRepublik day boundary the agent already uses.
@@ -164,6 +163,13 @@ async function runAction(
   }
 }
 
+/**
+ * Run one daily cycle. Uses the module-level `bridge` (electronBridge)
+ * for IPC emits; callers must ensure `bridge` is initialized before
+ * invoking this function (which is true for the standard runner flow,
+ * since the cycle loop runs after the top-level `await` chain that
+ * initializes the bridge).
+ */
 async function runCycle(
   ctx: BrowserContext,
   notifier: TelegramNotifier,
@@ -293,7 +299,9 @@ async function runCycle(
         try {
           await runAction(action, ctx, csrf, countryId, state);
         } catch (err) {
-          console.error(`[cycle] ${action} threw: ${(err as Error).message}`);
+          const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
+          console.error(msg);
+          bridge.emitLog('error', msg);
         }
       }
 
@@ -307,7 +315,9 @@ async function runCycle(
           console.log(`[cycle] missions sweep: claimed=[${m.claimed.join(', ')}] failed=${m.failed.length}`);
         }
       } catch (err) {
-        console.error(`[cycle] collectMissionRewards threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectMissionRewards threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
 
       try {
@@ -319,7 +329,9 @@ async function runCycle(
           console.log(`[cycle] objectives sweep: claimed=[${o.claimed.join(', ')}] failed=${o.failed.length}`);
         }
       } catch (err) {
-        console.error(`[cycle] collectObjectiveRewards threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectObjectiveRewards threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
 
       try {
@@ -331,7 +343,9 @@ async function runCycle(
           console.log(`[cycle] weekly sweep: noop (${w.reason})`);
         }
       } catch (err) {
-        console.error(`[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
     }
 
@@ -418,7 +432,9 @@ async function runCycle(
             `weekly=${fuel.spent}/70`,
         );
       } catch (err) {
-        console.error(`[cycle] farm session threw: ${(err as Error).message}`);
+        const msg = `[cycle] farm session threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
     } else if (!decision.shouldFarm) {
       fuel.cyclesSkipped++;
@@ -459,7 +475,9 @@ async function runCycle(
               await notifier.send(`❌ return-home failed: ${r.message}`);
             }
           } catch (err) {
-            console.error(`[cycle] travelHome threw: ${(err as Error).message}`);
+            const msg = `[cycle] travelHome threw: ${(err as Error).message}`;
+            console.error(msg);
+            bridge.emitLog('error', msg);
           }
         }
       }
@@ -537,10 +555,39 @@ const notifier = new TelegramNotifier({
   accountTag: env.ERP_ACCOUNT_SLUG,
 });
 
+const stopCtrl = createStopController();
+let lastMode: string | null = null;
+function handleStopSignal(name: string) {
+  if (!stopCtrl.requestStop()) {
+    // Second Ctrl-C / SIGTERM → hard-exit.
+    process.exit(1);
+  }
+  console.log(`\n[runner] ${name} received — finishing current cycle then exiting`);
+}
+process.on('SIGINT', () => handleStopSignal('SIGINT'));
+process.on('SIGTERM', () => handleStopSignal('SIGTERM'));
+
+// ── Electron IPC bridge ────────────────────────────────────────────────────
+// No-op when running as a plain Node process; only active when Electron
+// spawns this module via utilityProcess.fork() and process.parentPort exists.
+// process.parentPort is a Node 22 utility-process API; @types/node may not
+// declare it on older type definitions, so we access it defensively.
+const bridge = attachElectronBridge(
+  (process as unknown as { parentPort?: IpcPort | null }).parentPort ?? undefined,
+);
+bridge.onShutdown(() => handleStopSignal('IPC shutdown'));
+bridge.onPauseToggle((paused) => {
+  console.log(`[bridge] paused toggled to ${paused} via IPC`);
+  // Forward to settings.json so the dashboard stays in sync.
+  const cur = loadSettings();
+  saveSettings({ ...cur, paused });
+});
+bridge.emitReady(uiServer.port);
+
 if (env.ERP_CAPTCHA_PROVIDER !== 'none' && !env.ERP_CAPTCHA_API_KEY) {
-  console.warn(
-    `[runner] ERP_CAPTCHA_PROVIDER=${env.ERP_CAPTCHA_PROVIDER} but ERP_CAPTCHA_API_KEY is unset — captchas will not be auto-solved`,
-  );
+  const warnMsg = `[runner] ERP_CAPTCHA_PROVIDER=${env.ERP_CAPTCHA_PROVIDER} but ERP_CAPTCHA_API_KEY is unset — captchas will not be auto-solved`;
+  console.warn(warnMsg);
+  bridge.emitLog('warn', warnMsg);
 }
 const captchaCfg: CaptchaConfig = {
   provider: env.ERP_CAPTCHA_PROVIDER,
@@ -549,30 +596,28 @@ const captchaCfg: CaptchaConfig = {
   notify: (m) => notifier.send(m),
 };
 
-let stopping = false;
-let lastMode: string | null = null;
-process.on('SIGINT', () => {
-  if (stopping) process.exit(1);
-  stopping = true;
-  console.log('\n[runner] SIGINT received — finishing current cycle then exiting');
-});
-
 try {
   do {
+    bridge.emitLog('info', '[runner] cycle started');
+    bridge.emitState('cycling');
     try {
       await runCycle(ctx, notifier, captchaCfg, uiSnapshot);
+      bridge.emitState('idle');
     } catch (err) {
       const message = (err as Error).message;
-      console.error('[cycle] failed:', message);
+      bridge.emitState('error', message);
+      const msg = `[cycle] failed: ${message}`;
+      console.error(msg);
+      bridge.emitLog('error', msg);
       await notifier.sendError(message);
       appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
     }
-    if (ONCE || stopping) break;
+    if (ONCE || stopCtrl.isStopping()) break;
     console.log(`[runner] sleeping ${env.LOOP_INTERVAL_MS / 1000}s (wake on settings change)`);
     const reason = await sleepUntilWake(env.LOOP_INTERVAL_MS, join(configDir(), 'settings.json'));
     if (reason === 'file-changed') console.log('[runner] woken early — settings.json changed');
-  } while (!stopping);
+  } while (!stopCtrl.isStopping());
 } finally {
   await uiServer.close();
   await ctx.close();

@@ -9,4 +9,5 @@ dist/
 .superpowers/
 config/settings.json
 .claude/settings.local.json
-
+electron-dist/
+release/

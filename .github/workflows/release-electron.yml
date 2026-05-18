@@ -1,0 +1,44 @@
+name: Release Electron installer
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # v0.2.0, v1.0.0
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'      # v0.2.0-beta.1, v1.0.0-rc.1
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install
+        # Use `npm install` instead of `npm ci` because the lockfile is
+        # generated on macOS, which doesn't include Windows-platform
+        # optional transitive deps (e.g. @emnapi/* used by electron-builder's
+        # native-module WASM fallback). `npm install` resolves them on
+        # the Windows runner; lockfile stays committed for audit purposes.
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: |
+          npm run build
+          npm run build:electron
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis --x64 --publish always
