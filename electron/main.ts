@@ -1,6 +1,8 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import { createRunnerSupervisor } from './runnerSupervisor.js';
 import { createTray, openLogsFolder } from './tray.js';
 import { checkFirstRun } from './firstRun.js';
@@ -31,7 +33,11 @@ function createDashboardWindow(port: number) {
     height: 800,
     title: 'erepublik-agent',
     icon: path.join(__dirname, '../electron/icons/icon.ico'),
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.resolve(__dirname, 'preload.js'),
+    },
   });
   loadDashboardWithRetry(dashboardWindow, port);
   dashboardWindow.on('close', (event) => {
@@ -138,6 +144,56 @@ app.whenReady().then(() => {
 
   const firstRun = checkFirstRun(app.getPath('userData'));
   console.log(`[main] first-run check: ${firstRun.reason} (needsWizard=${firstRun.needsWizard})`);
+
+  ipcMain.handle('wizard:saveConfig', async (_, raw: any) => {
+    const userData = app.getPath('userData');
+    await fs.mkdir(path.join(userData, 'config'), { recursive: true });
+    const envLines = [
+      `ERP_LOGIN=${raw.email}`,
+      `ERP_PASSWORD=${raw.password}`,
+      `ERP_ACCOUNT_SLUG=${raw.slug}`,
+      `ERP_MAX_FOOD_PRICE=${raw.maxFoodPrice}`,
+      `ERP_FARM_MAX_TRAVEL_CC=${raw.maxTravel}`,
+      `ERP_FARM_MIN_FUEL=${raw.minFuel}`,
+      `ERP_RETURN_HOME_AFTER_MINUTES=${raw.returnAfter}`,
+      `ERP_RETURN_HOME_MAX_CC=${raw.returnMax}`,
+      `TELEGRAM_BOT_TOKEN=${raw.tgToken}`,
+      `TELEGRAM_CHAT_ID=${raw.tgChat}`,
+      `ERP_CAPTCHA_PROVIDER=${raw.captchaProvider}`,
+      `ERP_CAPTCHA_API_KEY=${raw.captchaKey}`,
+      `HEADED=false`,
+    ];
+    await fs.writeFile(path.join(userData, 'config', '.env'), envLines.join('\n'));
+    return { ok: true };
+  });
+
+  ipcMain.handle('wizard:startBootstrap', async (event) => {
+    const userData = app.getPath('userData');
+    const bootstrapPath = path.resolve(__dirname, '../dist/bootstrap.js');
+    return new Promise<{ ok: boolean; code?: number; reason?: string }>((resolve) => {
+      const child = spawn(process.execPath, [bootstrapPath], {
+        env: { ...process.env, ERP_ROOT: userData, HEADED: 'true' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      child.stdout?.on('data', (buf: Buffer) => {
+        event.sender.send('wizard:bootstrapOutput', { stream: 'stdout', text: buf.toString() });
+      });
+      child.stderr?.on('data', (buf: Buffer) => {
+        event.sender.send('wizard:bootstrapOutput', { stream: 'stderr', text: buf.toString() });
+      });
+      child.on('exit', (code) => {
+        event.sender.send('wizard:bootstrapOutput', { stream: 'exit', code: code ?? -1 });
+        resolve({ ok: code === 0, code: code ?? -1, reason: code !== 0 ? `Bootstrap exited with code ${code}` : undefined });
+      });
+    });
+  });
+
+  ipcMain.handle('wizard:finish', async (_, opts: { autostart: boolean }) => {
+    app.setLoginItemSettings({ openAtLogin: opts.autostart });
+    // Wizard window close + supervisor.start() wiring lands in Task 16.
+    return { ok: true };
+  });
 
   supervisor.start();
 });

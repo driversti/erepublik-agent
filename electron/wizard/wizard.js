@@ -98,3 +98,46 @@ blockedInput.addEventListener('change', () => {
 });
 
 document.getElementById('step2-back').addEventListener('click', () => show(1));
+
+const step2Log = document.getElementById('step2-log');
+const step2Open = document.getElementById('step2-open');
+const step2Retry = document.getElementById('step2-retry');
+
+function appendLog(text, kind = '') {
+  const line = document.createElement('div');
+  if (kind === 'stderr') line.style.color = '#f38ba8';
+  line.textContent = text;
+  step2Log.appendChild(line);
+  step2Log.scrollTop = step2Log.scrollHeight;
+}
+
+window.electronAPI.onBootstrapOutput((data) => {
+  if (data.stream === 'exit') {
+    if (data.code === 0) {
+      appendLog('[wizard] login successful — preparing next step…');
+      setTimeout(() => show(3), 600);
+    } else {
+      appendLog(`[wizard] bootstrap exited with code ${data.code}`, 'stderr');
+      step2Retry.style.display = 'inline-block';
+    }
+  } else {
+    appendLog((data.text ?? '').trimEnd(), data.stream === 'stderr' ? 'stderr' : '');
+  }
+});
+
+async function runBootstrap() {
+  step2Log.innerHTML = '';
+  step2Retry.style.display = 'none';
+  step2Open.disabled = true;
+  const save = await window.electronAPI.saveConfig(state.values);
+  if (!save.ok) {
+    appendLog(`[wizard] failed to save config: ${save.error ?? 'unknown error'}`, 'stderr');
+    step2Open.disabled = false;
+    return;
+  }
+  await window.electronAPI.startBootstrap();
+  step2Open.disabled = false;
+}
+
+step2Open.addEventListener('click', runBootstrap);
+step2Retry.addEventListener('click', runBootstrap);
