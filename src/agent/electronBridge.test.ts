@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { MessagePort } from 'worker_threads';
-import { attachElectronBridge, type IpcMessage } from './electronBridge.js';
+import { attachElectronBridge, type IpcMessage, type IpcPort } from './electronBridge.js';
 
 interface FakePort {
   postMessage: ReturnType<typeof vi.fn>;
@@ -43,21 +42,21 @@ describe('electronBridge', () => {
   describe('connected mode (parentPort present)', () => {
     it('emitReady posts a ready message', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       bridge.emitReady(7423);
       expect(port.postMessage).toHaveBeenCalledWith({ type: 'ready', port: 7423 });
     });
 
     it('emitLog posts log messages with level and text', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       bridge.emitLog('warn', 'careful now');
       expect(port.postMessage).toHaveBeenCalledWith({ type: 'log', level: 'warn', text: 'careful now' });
     });
 
     it('emitState posts state with optional reason', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       bridge.emitState('cycling');
       bridge.emitState('error', 'captcha unsolved');
       expect(port.postMessage).toHaveBeenNthCalledWith(1, { type: 'state', status: 'cycling' });
@@ -66,7 +65,7 @@ describe('electronBridge', () => {
 
     it('onShutdown invokes callback when shutdown arrives', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       const cb = vi.fn();
       bridge.onShutdown(cb);
       port.fire({ type: 'shutdown' });
@@ -75,7 +74,7 @@ describe('electronBridge', () => {
 
     it('onPauseToggle invokes callback with paused flag', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       const cb = vi.fn();
       bridge.onPauseToggle(cb);
       port.fire({ type: 'pauseToggle', paused: true });
@@ -84,7 +83,7 @@ describe('electronBridge', () => {
 
     it('ignores unknown message types silently', () => {
       const port = makeFakePort();
-      const bridge = attachElectronBridge(port as unknown as MessagePort);
+      const bridge = attachElectronBridge(port as IpcPort);
       const cb = vi.fn();
       bridge.onShutdown(cb);
       port.fire({ type: 'unknown' } as unknown as IpcMessage);

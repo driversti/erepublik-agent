@@ -1,4 +1,7 @@
-import type { MessagePort } from 'worker_threads';
+export interface IpcPort {
+  on(event: 'message', cb: (msg: unknown) => void): void;
+  postMessage(msg: unknown): void;
+}
 
 export type IpcMessage =
   | { type: 'ready'; port: number }
@@ -19,7 +22,7 @@ export interface ElectronBridge {
  * Returns a bridge. In CLI mode `port` is undefined and every method
  * is a no-op. In Electron utility-process mode `port` is `process.parentPort`.
  */
-export function attachElectronBridge(port: MessagePort | undefined): ElectronBridge {
+export function attachElectronBridge(port: IpcPort | undefined): ElectronBridge {
   if (!port) {
     return {
       emitReady: () => {},
@@ -51,7 +54,7 @@ export function attachElectronBridge(port: MessagePort | undefined): ElectronBri
   const post = (msg: IpcMessage) => port.postMessage(msg);
 
   return {
-    emitReady: (port) => post({ type: 'ready', port }),
+    emitReady: (uiPort) => post({ type: 'ready', port: uiPort }),
     emitLog: (level, text) => post({ type: 'log', level, text }),
     emitState: (status, reason) =>
       reason === undefined
