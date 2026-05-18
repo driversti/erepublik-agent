@@ -30,7 +30,7 @@ import { collectMissionRewards } from '../tools/claim.js';
 import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
-import { loadSettings } from '../ui/settingsStore.js';
+import { loadSettings, saveSettings } from '../ui/settingsStore.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
 import { travelHome } from '../tools/travel.js';
 import { startUiServer } from '../ui/server.js';
@@ -38,6 +38,7 @@ import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 import { sleepUntilWake } from '../ui/sleepUntilWake.js';
 import { appendHistory } from '../ui/historyStore.js';
 import { createStopController } from './stopController.js';
+import { attachElectronBridge, type IpcPort } from './electronBridge.js';
 
 const Env = z.object({
   ERP_ACCOUNT_SLUG: z.string().default('main'),
@@ -291,7 +292,9 @@ async function runCycle(
         try {
           await runAction(action, ctx, csrf, countryId, state);
         } catch (err) {
-          console.error(`[cycle] ${action} threw: ${(err as Error).message}`);
+          const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
+          console.error(msg);
+          bridge.emitLog('error', msg);
         }
       }
 
@@ -305,7 +308,9 @@ async function runCycle(
           console.log(`[cycle] missions sweep: claimed=[${m.claimed.join(', ')}] failed=${m.failed.length}`);
         }
       } catch (err) {
-        console.error(`[cycle] collectMissionRewards threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectMissionRewards threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
 
       try {
@@ -317,7 +322,9 @@ async function runCycle(
           console.log(`[cycle] objectives sweep: claimed=[${o.claimed.join(', ')}] failed=${o.failed.length}`);
         }
       } catch (err) {
-        console.error(`[cycle] collectObjectiveRewards threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectObjectiveRewards threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
 
       try {
@@ -329,7 +336,9 @@ async function runCycle(
           console.log(`[cycle] weekly sweep: noop (${w.reason})`);
         }
       } catch (err) {
-        console.error(`[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`);
+        const msg = `[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
     }
 
@@ -416,7 +425,9 @@ async function runCycle(
             `weekly=${fuel.spent}/70`,
         );
       } catch (err) {
-        console.error(`[cycle] farm session threw: ${(err as Error).message}`);
+        const msg = `[cycle] farm session threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
       }
     } else if (!decision.shouldFarm) {
       fuel.cyclesSkipped++;
@@ -457,7 +468,9 @@ async function runCycle(
               await notifier.send(`❌ return-home failed: ${r.message}`);
             }
           } catch (err) {
-            console.error(`[cycle] travelHome threw: ${(err as Error).message}`);
+            const msg = `[cycle] travelHome threw: ${(err as Error).message}`;
+            console.error(msg);
+            bridge.emitLog('error', msg);
           }
         }
       }
@@ -535,18 +548,6 @@ const notifier = new TelegramNotifier({
   accountTag: env.ERP_ACCOUNT_SLUG,
 });
 
-if (env.ERP_CAPTCHA_PROVIDER !== 'none' && !env.ERP_CAPTCHA_API_KEY) {
-  console.warn(
-    `[runner] ERP_CAPTCHA_PROVIDER=${env.ERP_CAPTCHA_PROVIDER} but ERP_CAPTCHA_API_KEY is unset — captchas will not be auto-solved`,
-  );
-}
-const captchaCfg: CaptchaConfig = {
-  provider: env.ERP_CAPTCHA_PROVIDER,
-  apiKey: env.ERP_CAPTCHA_API_KEY,
-  maxAttempts: env.ERP_CAPTCHA_MAX_ATTEMPTS,
-  notify: (m) => notifier.send(m),
-};
-
 const stopCtrl = createStopController();
 let lastMode: string | null = null;
 function handleStopSignal(name: string) {
@@ -559,13 +560,47 @@ function handleStopSignal(name: string) {
 process.on('SIGINT', () => handleStopSignal('SIGINT'));
 process.on('SIGTERM', () => handleStopSignal('SIGTERM'));
 
+// ── Electron IPC bridge ────────────────────────────────────────────────────
+// No-op when running as a plain Node process; only active when Electron
+// spawns this module via utilityProcess.fork() and process.parentPort exists.
+// process.parentPort is a Node 22 utility-process API; @types/node may not
+// declare it on older type definitions, so we access it defensively.
+const _parentPort = (process as unknown as Record<string, unknown>).parentPort;
+const bridge = attachElectronBridge(
+  (_parentPort ?? undefined) as unknown as IpcPort | undefined,
+);
+bridge.onShutdown(() => handleStopSignal('IPC shutdown'));
+bridge.onPauseToggle((paused) => {
+  // Forward to settings.json so the dashboard stays in sync.
+  const cur = loadSettings();
+  saveSettings({ ...cur, paused });
+});
+bridge.emitReady(uiServer.port);
+
+if (env.ERP_CAPTCHA_PROVIDER !== 'none' && !env.ERP_CAPTCHA_API_KEY) {
+  const warnMsg = `[runner] ERP_CAPTCHA_PROVIDER=${env.ERP_CAPTCHA_PROVIDER} but ERP_CAPTCHA_API_KEY is unset — captchas will not be auto-solved`;
+  console.warn(warnMsg);
+  bridge.emitLog('warn', warnMsg);
+}
+const captchaCfg: CaptchaConfig = {
+  provider: env.ERP_CAPTCHA_PROVIDER,
+  apiKey: env.ERP_CAPTCHA_API_KEY,
+  maxAttempts: env.ERP_CAPTCHA_MAX_ATTEMPTS,
+  notify: (m) => notifier.send(m),
+};
+
 try {
   do {
+    bridge.emitLog('info', '[runner] cycle started');
+    bridge.emitState('cycling');
     try {
       await runCycle(ctx, notifier, captchaCfg, uiSnapshot);
+      bridge.emitState('idle');
     } catch (err) {
       const message = (err as Error).message;
+      bridge.emitState('error', message);
       console.error('[cycle] failed:', message);
+      bridge.emitLog('error', `[cycle] failed: ${message}`);
       await notifier.sendError(message);
       appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
