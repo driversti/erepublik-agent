@@ -28,7 +28,7 @@ export interface TrayController {
 }
 
 function loadIcon(): NativeImage {
-  const iconPath = path.resolve(__dirname, '../electron/icons/tray.png');
+  const iconPath = path.resolve(__dirname, 'icons', 'tray.png');
   return nativeImage.createFromPath(iconPath);
 }
 

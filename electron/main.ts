@@ -30,7 +30,7 @@ function createWizardWindow() {
     width: 760,
     height: 700,
     title: 'erepublik-agent setup',
-    icon: path.join(__dirname, '../electron/icons/icon.ico'),
+    icon: path.join(__dirname, 'icons', 'icon.ico'),
     resizable: false,
     maximizable: false,
     webPreferences: {
@@ -55,7 +55,7 @@ function createDashboardWindow(port: number) {
     width: 1280,
     height: 800,
     title: 'erepublik-agent',
-    icon: path.join(__dirname, '../electron/icons/icon.ico'),
+    icon: path.join(__dirname, 'icons', 'icon.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -180,6 +180,29 @@ app.whenReady().then(() => {
   ipcMain.handle('wizard:saveConfig', async (_, raw: any) => {
     const userData = app.getPath('userData');
     await fs.mkdir(path.join(userData, 'config'), { recursive: true });
+    // Resolve blockedCountries names to numeric IDs for the runner.
+    let blockedCountryIds = '';
+    if (raw.blockedCountries && raw.blockedCountries.trim().length > 0) {
+      try {
+        const catalogPath = path.resolve(__dirname, '..', 'data', 'countries.json');
+        const catalog = JSON.parse(await fs.readFile(catalogPath, 'utf8')) as Array<{ id: number; name: string }>;
+        const tokens = raw.blockedCountries.split(',').map((s: string) => s.trim()).filter(Boolean);
+        const ids: number[] = [];
+        for (const t of tokens) {
+          const asNum = Number.parseInt(t, 10);
+          if (!Number.isNaN(asNum) && String(asNum) === t) {
+            ids.push(asNum);
+            continue;
+          }
+          const c = catalog.find((x) => x.name.toLowerCase() === t.toLowerCase());
+          if (c) ids.push(c.id);
+          // Silently skip unknown — wizard's validator already warns the user.
+        }
+        blockedCountryIds = ids.join(',');
+      } catch (err) {
+        console.warn('[wizard:saveConfig] failed to resolve blockedCountries:', err);
+      }
+    }
     const envLines = [
       `ERP_LOGIN=${raw.email}`,
       `ERP_PASSWORD=${raw.password}`,
@@ -187,6 +210,7 @@ app.whenReady().then(() => {
       `ERP_MAX_FOOD_PRICE=${raw.maxFoodPrice}`,
       `ERP_FARM_MAX_TRAVEL_CC=${raw.maxTravel}`,
       `ERP_FARM_MIN_FUEL=${raw.minFuel}`,
+      `ERP_FARM_BLOCKED_COUNTRIES=${blockedCountryIds}`,
       `ERP_RETURN_HOME_AFTER_MINUTES=${raw.returnAfter}`,
       `ERP_RETURN_HOME_MAX_CC=${raw.returnMax}`,
       `TELEGRAM_BOT_TOKEN=${raw.tgToken}`,
