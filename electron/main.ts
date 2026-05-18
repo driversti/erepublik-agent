@@ -7,6 +7,7 @@ import { createRunnerSupervisor } from './runnerSupervisor.js';
 import { createTray, openLogsFolder } from './tray.js';
 import { checkFirstRun } from './firstRun.js';
 import { configureUpdater, manualCheck, showManualResultDialog } from './updater.js';
+import { detectLegacyInstall, copyLegacyData, runImportedHealthcheck } from './importLegacy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -229,6 +230,38 @@ app.whenReady().then(() => {
     }
     supervisor.start();
     return { ok: true };
+  });
+
+  ipcMain.handle('wizard:pickLegacyFolder', async () => {
+    const parent = wizardWindow ?? dashboardWindow;
+    const result = parent
+      ? await dialog.showOpenDialog(parent, {
+          title: 'Select your existing .bat install folder',
+          properties: ['openDirectory'],
+        })
+      : await dialog.showOpenDialog({
+          title: 'Select your existing .bat install folder',
+          properties: ['openDirectory'],
+        });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const folder = result.filePaths[0];
+    const detected = detectLegacyInstall(folder);
+    if (!detected) {
+      return { ok: false, error: 'Selected folder does not look like a .bat install (missing markers).' };
+    }
+    return { ok: true, info: detected };
+  });
+
+  ipcMain.handle('wizard:importLegacy', async (event, folder: string) => {
+    const detected = detectLegacyInstall(folder);
+    if (!detected) return { ok: false, error: 'Selected folder is no longer a valid .bat install.' };
+    const userData = app.getPath('userData');
+    await copyLegacyData(detected, userData, (p) => {
+      event.sender.send('wizard:importProgress', p);
+    });
+    const healthcheckPath = path.resolve(__dirname, '../dist/healthcheck.js');
+    const ok = await runImportedHealthcheck(userData, healthcheckPath, process.execPath);
+    return { ok: true, sessionValid: ok };
   });
 
   const firstRun = checkFirstRun(app.getPath('userData'));

@@ -12,4 +12,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Importer (Task 18-19):
   pickLegacyFolder: () => ipcRenderer.invoke('wizard:pickLegacyFolder'),
   importLegacy: (folder: string) => ipcRenderer.invoke('wizard:importLegacy', folder),
+  onImportProgress: (cb: (p: { task: string; percent: number }) => void) => {
+    const listener = (_: unknown, payload: { task: string; percent: number }) => cb(payload);
+    ipcRenderer.on('wizard:importProgress', listener);
+    return () => ipcRenderer.removeListener('wizard:importProgress', listener);
+  },
 });

@@ -150,3 +150,36 @@ step3Start.addEventListener('click', async () => {
   step3Start.textContent = 'Starting…';
   await window.electronAPI.finish({ autostart: autostartChk.checked });
 });
+
+document.getElementById('import-link').addEventListener('click', async () => {
+  const picked = await window.electronAPI.pickLegacyFolder();
+  if (!picked) return;
+  if (!picked.ok) { alert(picked.error); return; }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#cdd6f4; z-index:100;';
+  overlay.innerHTML = '<h2>Importing existing setup…</h2><div id="import-status">Starting…</div><progress id="import-bar" max="100" value="0" style="width:300px;"></progress>';
+  document.body.appendChild(overlay);
+
+  const offProgress = window.electronAPI.onImportProgress((p) => {
+    document.getElementById('import-status').textContent = p.task;
+    document.getElementById('import-bar').value = p.percent;
+  });
+
+  const result = await window.electronAPI.importLegacy(picked.info.rootPath);
+  offProgress();
+  overlay.remove();
+
+  if (!result.ok) {
+    alert(`Import failed: ${result.error}`);
+    return;
+  }
+
+  if (result.sessionValid) {
+    appendLog('[wizard] imported session is valid — skipping Sign in step.');
+    show(3);
+  } else {
+    alert('Import successful, but your existing login has expired. You will need to sign in again.');
+    show(2);
+  }
+});
