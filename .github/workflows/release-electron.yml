@@ -23,7 +23,12 @@ jobs:
           cache: 'npm'
 
       - name: Install
-        run: npm ci
+        # Use `npm install` instead of `npm ci` because the lockfile is
+        # generated on macOS, which doesn't include Windows-platform
+        # optional transitive deps (e.g. @emnapi/* used by electron-builder's
+        # native-module WASM fallback). `npm install` resolves them on
+        # the Windows runner; lockfile stays committed for audit purposes.
+        run: npm install --no-audit --no-fund
 
       - name: Build
         run: |
