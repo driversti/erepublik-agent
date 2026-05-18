@@ -17,6 +17,7 @@ if (!gotLock) {
 }
 
 let dashboardWindow: BrowserWindow | undefined;
+let wizardWindow: BrowserWindow | undefined;
 let tray: ReturnType<typeof createTray> | undefined;
 let isQuitting = false;
 let isPaused = false;
@@ -191,10 +192,16 @@ app.whenReady().then(() => {
 
   ipcMain.handle('wizard:finish', async (_, opts: { autostart: boolean }) => {
     app.setLoginItemSettings({ openAtLogin: opts.autostart });
-    // Wizard window close + supervisor.start() wiring lands in Task 16.
+    tray?.setState({ autostart: opts.autostart });
+    if (wizardWindow) {
+      wizardWindow.close();
+      wizardWindow = undefined;
+    }
+    supervisor.start();
     return { ok: true };
   });
 
+  // TODO(Task 16): gate on checkFirstRun(); skip when wizard is shown.
   supervisor.start();
 });
 

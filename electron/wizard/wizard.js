@@ -141,3 +141,12 @@ async function runBootstrap() {
 
 step2Open.addEventListener('click', runBootstrap);
 step2Retry.addEventListener('click', runBootstrap);
+
+const step3Start = document.getElementById('step3-start');
+const autostartChk = document.getElementById('autostart');
+
+step3Start.addEventListener('click', async () => {
+  step3Start.disabled = true;
+  step3Start.textContent = 'Starting…';
+  await window.electronAPI.finish({ autostart: autostartChk.checked });
+});
