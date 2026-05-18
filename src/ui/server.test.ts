@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -204,6 +204,62 @@ describe('UI server', () => {
           body: JSON.stringify({ junk: big }),
         });
         expect(res.status).toBe(413);
+      } finally {
+        await handle.close();
+      }
+    });
+  });
+
+  describe('POST /api/run-now', () => {
+    it('returns 200 { ok: true }', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        // Seed defaults so settings.json exists.
+        await fetch(`http://127.0.0.1:${handle.port}/api/settings`);
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/run-now`, { method: 'POST' });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body).toEqual({ ok: true });
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rewrites settings.json so fs.watch would fire (mtime bumped)', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        await fetch(`http://127.0.0.1:${handle.port}/api/settings`);
+        const file = join(tmpRoot, 'config', 'settings.json');
+        const mtimeBefore = statSync(file).mtimeMs;
+        // 10 ms is enough for filesystem mtime resolution on macOS/Linux APFS/ext4.
+        await new Promise((r) => setTimeout(r, 15));
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/run-now`, { method: 'POST' });
+        expect(res.status).toBe(200);
+        const mtimeAfter = statSync(file).mtimeMs;
+        expect(mtimeAfter).toBeGreaterThan(mtimeBefore);
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('does not mutate the persisted settings', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const before = await (await fetch(`http://127.0.0.1:${handle.port}/api/settings`)).json();
+        const post = await fetch(`http://127.0.0.1:${handle.port}/api/run-now`, { method: 'POST' });
+        expect(post.ok).toBe(true);
+        const after = await (await fetch(`http://127.0.0.1:${handle.port}/api/settings`)).json();
+        expect(after).toEqual(before);
+      } finally {
+        await handle.close();
+      }
+    });
+
+    it('rejects non-POST methods with 405', async () => {
+      const handle = await startUiServer({ getSnapshot: () => createSnapshot(), port: 0 });
+      try {
+        const res = await fetch(`http://127.0.0.1:${handle.port}/api/run-now`);
+        expect(res.status).toBe(405);
       } finally {
         await handle.close();
       }
