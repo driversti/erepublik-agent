@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRunnerSupervisor } from './runnerSupervisor.js';
 import { createTray, openLogsFolder } from './tray.js';
+import { checkFirstRun } from './firstRun.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,6 +135,9 @@ app.whenReady().then(() => {
       'Bot stopped after repeated crashes. Right-click → Open logs folder.',
     );
   });
+
+  const firstRun = checkFirstRun(app.getPath('userData'));
+  console.log(`[main] first-run check: ${firstRun.reason} (needsWizard=${firstRun.needsWizard})`);
 
   supervisor.start();
 });
