@@ -2,6 +2,7 @@
   "name": "erepublik-agent",
   "version": "0.1.7",
   "private": true,
+  "main": "electron-dist/main.js",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
