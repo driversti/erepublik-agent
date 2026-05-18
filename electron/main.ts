@@ -36,7 +36,7 @@ function createWizardWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.resolve(__dirname, 'preload.js'),
+      preload: path.resolve(__dirname, 'preload.cjs'),
     },
   });
   wizardWindow.loadFile(path.resolve(__dirname, 'wizard', 'index.html'));
@@ -64,7 +64,7 @@ function createDashboardWindow(port: number) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.resolve(__dirname, 'preload.js'),
+      preload: path.resolve(__dirname, 'preload.cjs'),
     },
   });
   loadDashboardWithRetry(dashboardWindow, port);
