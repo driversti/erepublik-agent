@@ -125,18 +125,25 @@ window.electronAPI.onBootstrapOutput((data) => {
   }
 });
 
+const STEP2_OPEN_DEFAULT_LABEL = step2Open.textContent;
+
 async function runBootstrap() {
   step2Log.innerHTML = '';
   step2Retry.style.display = 'none';
   step2Open.disabled = true;
+  step2Open.textContent = 'Working… ⏳';
+  appendLog('[wizard] saving configuration…');
   const save = await window.electronAPI.saveConfig(state.values);
   if (!save.ok) {
     appendLog(`[wizard] failed to save config: ${save.error ?? 'unknown error'}`, 'stderr');
     step2Open.disabled = false;
+    step2Open.textContent = STEP2_OPEN_DEFAULT_LABEL;
     return;
   }
+  appendLog('[wizard] configuration saved; launching bootstrap…');
   await window.electronAPI.startBootstrap();
   step2Open.disabled = false;
+  step2Open.textContent = STEP2_OPEN_DEFAULT_LABEL;
 }
 
 step2Open.addEventListener('click', runBootstrap);

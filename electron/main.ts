@@ -226,11 +226,32 @@ app.whenReady().then(() => {
   ipcMain.handle('wizard:startBootstrap', async (event) => {
     const userData = app.getPath('userData');
     const bootstrapPath = path.resolve(__dirname, '../dist/bootstrap.js');
+    // Immediate feedback so the user sees something before any subprocess output:
+    event.sender.send('wizard:bootstrapOutput', {
+      stream: 'stdout',
+      text: `[wizard] launching login process… (script=${bootstrapPath})`,
+    });
+    // First-run downloads ~200 MB CloakBrowser Chromium; warn the user up front.
+    event.sender.send('wizard:bootstrapOutput', {
+      stream: 'stdout',
+      text: '[wizard] first run downloads ~200 MB CloakBrowser Chromium — this can take 3-5 minutes',
+    });
     return new Promise<{ ok: boolean; code?: number; reason?: string }>((resolve) => {
+      // ELECTRON_RUN_AS_NODE=1 makes process.execPath (the .exe) behave as plain
+      // Node when launched as a child — otherwise it would try to start another
+      // copy of the Electron app instead of running our script.
       const child = spawn(process.execPath, [bootstrapPath], {
-        env: { ...process.env, ERP_ROOT: userData, HEADED: 'true' },
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          ERP_ROOT: userData,
+          HEADED: 'true',
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+      });
+      child.on('error', (err) => {
+        event.sender.send('wizard:bootstrapOutput', { stream: 'stderr', text: `[wizard] spawn error: ${err.message}` });
       });
       child.stdout?.on('data', (buf: Buffer) => {
         event.sender.send('wizard:bootstrapOutput', { stream: 'stdout', text: buf.toString() });
