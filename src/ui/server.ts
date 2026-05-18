@@ -103,6 +103,17 @@ async function handlePutSettings(req: IncomingMessage, res: ServerResponse): Pro
   }
 }
 
+function handleRunNow(_req: IncomingMessage, res: ServerResponse): void {
+  try {
+    // Reuse the existing fs.watch-on-settings.json wake path: atomic write
+    // bumps mtime so sleepUntilWake (in the runner) breaks out of its sleep.
+    saveSettings(loadSettings());
+    sendJson(res, 200, { ok: true });
+  } catch (err) {
+    sendJson(res, 500, { error: (err as Error).message });
+  }
+}
+
 function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): void {
   const url = req.url ?? '/';
   const method = req.method ?? 'GET';
@@ -112,6 +123,14 @@ function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): 
 
   if (method === 'PUT' && path === '/api/settings') {
     return void handlePutSettings(req, res);
+  }
+  if (method === 'POST' && path === '/api/run-now') {
+    return handleRunNow(req, res);
+  }
+  if (path === '/api/run-now') {
+    // POST is the only verb; GET / PUT / DELETE etc. → 405.
+    res.writeHead(405).end('Method not allowed');
+    return;
   }
   if (method !== 'GET') {
     res.writeHead(405).end('Method not allowed');
