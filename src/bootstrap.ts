@@ -34,15 +34,23 @@ const page = ctx.pages()[0] ?? (await ctx.newPage());
 console.log('[bootstrap] navigating to /en/login');
 await page.goto('https://www.erepublik.com/en/login', { waitUntil: 'domcontentloaded' });
 
-const alreadyLoggedIn = page.url().includes('/en') && !page.url().includes('/login');
-if (alreadyLoggedIn) {
-  console.log(`[bootstrap] already authenticated (url=${page.url()})`);
-  await ctx.close();
-  process.exit(0);
+const emailField = page.locator('input[name="citizen_email"]');
+try {
+  await emailField.waitFor({ state: 'visible', timeout: 10_000 });
+} catch {
+  // No login form appeared within 10s. If the persisted session is valid,
+  // eRepublik redirects /en/login → /en after domcontentloaded, so the form
+  // never renders. Treat that as "already authenticated".
+  if (!page.url().includes('/login')) {
+    console.log(`[bootstrap] already authenticated (url=${page.url()})`);
+    await ctx.close();
+    process.exit(0);
+  }
+  throw new Error(`[bootstrap] login form not found at ${page.url()}`);
 }
 
 console.log('[bootstrap] filling credentials');
-await page.locator('input[name="citizen_email"]').fill(env.ERP_LOGIN);
+await emailField.fill(env.ERP_LOGIN);
 await page.locator('input[name="citizen_password"]').fill(env.ERP_PASSWORD);
 
 await Promise.all([
