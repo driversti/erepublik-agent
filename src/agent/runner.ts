@@ -163,6 +163,13 @@ async function runAction(
   }
 }
 
+/**
+ * Run one daily cycle. Uses the module-level `bridge` (electronBridge)
+ * for IPC emits; callers must ensure `bridge` is initialized before
+ * invoking this function (which is true for the standard runner flow,
+ * since the cycle loop runs after the top-level `await` chain that
+ * initializes the bridge).
+ */
 async function runCycle(
   ctx: BrowserContext,
   notifier: TelegramNotifier,
@@ -565,12 +572,12 @@ process.on('SIGTERM', () => handleStopSignal('SIGTERM'));
 // spawns this module via utilityProcess.fork() and process.parentPort exists.
 // process.parentPort is a Node 22 utility-process API; @types/node may not
 // declare it on older type definitions, so we access it defensively.
-const _parentPort = (process as unknown as Record<string, unknown>).parentPort;
 const bridge = attachElectronBridge(
-  (_parentPort ?? undefined) as unknown as IpcPort | undefined,
+  (process as unknown as { parentPort?: IpcPort | null }).parentPort ?? undefined,
 );
 bridge.onShutdown(() => handleStopSignal('IPC shutdown'));
 bridge.onPauseToggle((paused) => {
+  console.log(`[bridge] paused toggled to ${paused} via IPC`);
   // Forward to settings.json so the dashboard stays in sync.
   const cur = loadSettings();
   saveSettings({ ...cur, paused });
@@ -599,8 +606,9 @@ try {
     } catch (err) {
       const message = (err as Error).message;
       bridge.emitState('error', message);
-      console.error('[cycle] failed:', message);
-      bridge.emitLog('error', `[cycle] failed: ${message}`);
+      const msg = `[cycle] failed: ${message}`;
+      console.error(msg);
+      bridge.emitLog('error', msg);
       await notifier.sendError(message);
       appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
