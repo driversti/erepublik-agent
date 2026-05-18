@@ -10,7 +10,13 @@ export interface UpdaterCallbacks {
   onError: (err: Error) => void;
 }
 
-export function configureUpdater(cb: UpdaterCallbacks): void {
+const DAILY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export interface UpdaterHandle {
+  dispose(): void;
+}
+
+export function configureUpdater(cb: UpdaterCallbacks): UpdaterHandle {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
@@ -26,9 +32,22 @@ export function configureUpdater(cb: UpdaterCallbacks): void {
   });
 
   // Initial check after 30s delay (don't block startup UX).
-  setTimeout(() => {
+  const startupTimer = setTimeout(() => {
     autoUpdater.checkForUpdates().catch(cb.onError);
   }, 30_000);
+
+  // Recurring background check so the long-running tray daemon learns about
+  // releases without a restart. 24h drift across Windows sleep is acceptable.
+  const dailyTimer = setInterval(() => {
+    autoUpdater.checkForUpdates().catch(cb.onError);
+  }, DAILY_CHECK_INTERVAL_MS);
+
+  return {
+    dispose() {
+      clearTimeout(startupTimer);
+      clearInterval(dailyTimer);
+    },
+  };
 }
 
 export interface ManualCheckResult {
