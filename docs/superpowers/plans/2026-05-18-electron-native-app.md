@@ -68,8 +68,9 @@ These tasks are independent of Electron and can land before any Electron code ex
 ## Task 1: Graceful SIGTERM in the runner
 
 **Files:**
+- Create: `src/agent/stopController.ts`
+- Create: `src/agent/stopController.test.ts`
 - Modify: `src/agent/runner.ts` (replace lines ~80-83 and ~554-558)
-- Test: `src/agent/runner.signals.test.ts` (new — extracted helper test)
 
 The current `SIGTERM` handler at line 80-83 exits immediately. We need it graceful — same behavior as `SIGINT` (set `stopping = true`, finish current cycle, exit 0). To make this testable, extract a small `requestStop()` helper and unit-test it.
 
