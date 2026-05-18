@@ -90,13 +90,6 @@ if defined BLOCKED_RAW (
     )
 )
 
-:: Leak FARM_BLOCKED_CSV out of the current setlocal scope. The next
-:: :prompt call below does endlocal/setlocal and would otherwise discard
-:: it -- leaving blocked-countries silently missing from .env. We always
-:: leak (even when empty); the writer block below filters on non-empty.
-endlocal & set "FARM_BLOCKED_CSV=%FARM_BLOCKED_CSV%"
-setlocal enabledelayedexpansion
-
 echo.
 echo --- Auto return-home ---
 call :prompt "Return home after how many minutes abroad (0 disables)" "%CUR_RETURN_HOME_MIN%" RETURN_HOME_MIN
@@ -147,10 +140,15 @@ exit /b 0
 
 :prompt
 :: %1 = prompt text, %2 = default, %3 = output var name
+:: Each function pushes its OWN setlocal at entry and leaks the result
+:: out via `endlocal & set` at exit. The caller's setlocal (line 45) is
+:: never popped, so delayed-expansion stays on across all prompts and
+:: every collected variable lives in that same outer scope -- which is
+:: what the writer block at the end reads with !VAR!.
+setlocal enabledelayedexpansion
 set "_VAL=%~2"
 set /p "_VAL=%~1 [%~2]: "
 endlocal & set "%~3=%_VAL%"
-setlocal enabledelayedexpansion
 goto :eof
 
 :prompt_password
@@ -161,6 +159,7 @@ goto :eof
 :: host chatter) into the captured stream, which then overwrites _VAL with
 :: junk instead of leaving it on the default. A temp file isolates the
 :: password value cleanly.
+setlocal enabledelayedexpansion
 set "_DEFAULT=%~2"
 set "_VAL=%_DEFAULT%"
 if "%_DEFAULT%"=="" (
@@ -175,5 +174,4 @@ if exist "!_TMPFILE!" (
     del /q "!_TMPFILE!" >nul 2>&1
 )
 endlocal & set "%~3=%_VAL%"
-setlocal enabledelayedexpansion
 goto :eof
