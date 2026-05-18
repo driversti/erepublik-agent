@@ -111,6 +111,19 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
+  // Declared before createTray so onQuit's closure has it in scope on first
+  // invocation. The updater's own callbacks only fire async, so referencing
+  // the (still-undefined) module-level `tray` from inside them is safe.
+  const updaterHandle = configureUpdater({
+    onUpdateAvailable: (v) => {
+      tray?.showBalloon('erepublik-agent', `Update available: v${v}. Quit to install.`);
+    },
+    onUpdateNotAvailable: () => {},
+    onError: (err) => {
+      console.warn('[updater]', err.message);
+    },
+  });
+
   tray = createTray({
     onShowDashboard: () => {
       const port = supervisor.getLastKnownPort();
@@ -145,6 +158,7 @@ app.whenReady().then(() => {
     },
     onQuit: async () => {
       isQuitting = true;
+      updaterHandle.dispose();
       await supervisor.stop();
       tray?.destroy();
       app.quit();
@@ -152,16 +166,6 @@ app.whenReady().then(() => {
   });
   tray.setState({
     autostart: app.getLoginItemSettings().openAtLogin,
-  });
-
-  configureUpdater({
-    onUpdateAvailable: (v) => {
-      tray?.showBalloon('erepublik-agent', `Update available: v${v}. Quit to install.`);
-    },
-    onUpdateNotAvailable: () => {},
-    onError: (err) => {
-      console.warn('[updater]', err.message);
-    },
   });
 
   supervisor.onReady((port) => {
