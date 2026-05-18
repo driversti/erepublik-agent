@@ -14,6 +14,7 @@ function weekly(overrides: Partial<WeeklyFuelState> = {}): WeeklyFuelState {
     lastFarmedAt: null,
     nextEligibleAt: null,
     cyclesSkipped: 0,
+    weekStartInventory: null,
     ...overrides,
   };
 }

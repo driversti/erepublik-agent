@@ -21,6 +21,13 @@ export const WeeklyFuelState = z.object({
   nextEligibleAt: z.string().nullable().default(null),
   /** Cycles we skipped despite budget allowing it. Metrics only. */
   cyclesSkipped: z.number().int().nonnegative().default(0),
+  /**
+   * Inventory baseline locked on the first cycle of the eRepublik week.
+   * Lets the runner reconcile `spent` against actual inventory drops so manual
+   * out-of-band fuel usage (other browser, mobile, etc.) is detected.
+   * Null on a freshly-rolled week until the first cycle stamps it.
+   */
+  weekStartInventory: z.number().int().nonnegative().nullable().default(null),
 });
 
 export type WeeklyFuelState = z.infer<typeof WeeklyFuelState>;
@@ -33,6 +40,7 @@ function emptyState(week: number): WeeklyFuelState {
     lastFarmedAt: null,
     nextEligibleAt: null,
     cyclesSkipped: 0,
+    weekStartInventory: null,
   };
 }
 
@@ -56,4 +64,47 @@ export function loadFuel(now: Date = new Date()): { state: WeeklyFuelState; roll
 export function saveFuel(state: WeeklyFuelState): void {
   // sessionsDir() already mkdirs.
   writeFileSync(filePath(), JSON.stringify(state, null, 2), 'utf8');
+}
+
+export interface ReconcileResult {
+  /** New state (mutated copy) with weekStartInventory and spent reconciled. */
+  state: WeeklyFuelState;
+  /** Whether weekStartInventory was set this call (first cycle of the week). */
+  baselineSet: boolean;
+  /**
+   * How many barrels were attributed to out-of-band usage (this call).
+   * Positive when `weekStartInventory − currentInventory` exceeds prior `spent`.
+   */
+  externalBurnDetected: number;
+}
+
+/**
+ * Reconcile `spent` against the live inventory reading.
+ *
+ * Why: `spent` is only bumped by farm sessions the agent runs. If the operator
+ * burns fuel manually in another browser, inventory drops but `spent` doesn't,
+ * letting the agent overshoot the 70-barrel weekly cap. This catches that:
+ *
+ * - First cycle of the week (weekStartInventory==null) → lock baseline = current.
+ * - Subsequent cycles → `spent = max(spent, baseline - current)`.
+ *   - Manual burn → inventory falls below baseline-spent → spent catches up.
+ *   - Mid-week purchase → inventory rises → `baseline-current` shrinks/goes negative
+ *     → `max()` preserves agent-tracked spent. We never roll back.
+ */
+export function reconcileSpentWithInventory(
+  state: WeeklyFuelState,
+  currentInventory: number,
+): ReconcileResult {
+  const next = { ...state };
+  let baselineSet = false;
+  if (next.weekStartInventory == null) {
+    next.weekStartInventory = currentInventory;
+    baselineSet = true;
+  }
+  const observedSpent = Math.max(0, next.weekStartInventory - currentInventory);
+  const externalBurnDetected = Math.max(0, observedSpent - next.spent);
+  if (observedSpent > next.spent) {
+    next.spent = observedSpent;
+  }
+  return { state: next, baselineSet, externalBurnDetected };
 }

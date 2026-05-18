@@ -27,7 +27,12 @@ import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
 import { collectMissionRewards } from '../tools/claim.js';
-import { loadFuel, saveFuel, type WeeklyFuelState } from '../memory/weeklyFuelState.js';
+import {
+  loadFuel,
+  reconcileSpentWithInventory,
+  saveFuel,
+  type WeeklyFuelState,
+} from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
 import { loadSettings, saveSettings } from '../ui/settingsStore.js';
@@ -351,6 +356,21 @@ async function runCycle(
 
     // ── Farm gate ─────────────────────────────────────────────────────────────
     const fuelAtCycleStart = ctxInfo.fuelLeft ?? 0;
+    // Reconcile spent counter against live inventory before the gate runs.
+    // Catches manual fuel usage from another browser/device that the agent
+    // didn't account for. See `reconcileSpentWithInventory` doc for the model.
+    const reconcile = reconcileSpentWithInventory(fuel, fuelAtCycleStart);
+    Object.assign(fuel, reconcile.state);
+    if (reconcile.baselineSet) {
+      console.log(`[cycle] fuel baseline locked: weekStartInventory=${fuelAtCycleStart}`);
+    }
+    if (reconcile.externalBurnDetected > 0) {
+      const msg =
+        `[cycle] reconciled spent: detected +${reconcile.externalBurnDetected} ` +
+        `out-of-band fuel usage (spent now ${fuel.spent}/70)`;
+      console.log(msg);
+      bridge.emitLog('info', msg);
+    }
     const decision = settings.farmEnabled
       ? decideFarming({
           weekly: fuel,
