@@ -40,6 +40,10 @@ import { pickBomb } from '../../tools/pickBomb.js';
 import { apiCall } from '../../transport/apiCall.js';
 import type { InventoryWeapon } from '../../tools/pickWeapon.js';
 import { loadSettings } from '../../ui/settingsStore.js';
+import {
+  formatBattleFailureMessage,
+  formatBattleSuccessMessage,
+} from '../../util/battleNotification.js';
 
 const FARM_DIVISION = 3; // Maverick descends to D3 regardless of native div.
 const BOMB_ENERGY = 11;  // Game min for special-weapon deploys.
@@ -551,17 +555,38 @@ async function runMaverickD3(
       );
       farmedCount++;
       wins.push({ battleId: c.battleId, regionName: c.regionName, inv, def });
+      await Promise.resolve(
+        cfg.notify?.(
+          formatBattleSuccessMessage({
+            battleId: c.battleId,
+            battleZoneId: c.battleZoneId,
+            regionName: c.regionName,
+            invaderCountryId: c.invaderId,
+            defenderCountryId: c.defenderId,
+            division: FARM_DIVISION,
+          }),
+        ),
+      ).catch(() => undefined);
     } catch (e) {
       const msg = (e as Error).message;
       console.log(`   ❌ ${msg}`);
       if (e instanceof PartialBattleError) {
-        const sideAVerified = e.sideA.verified ? '✅verified' : '⚠unverified';
-        const alert =
-          `⚠️ *Partial battle* #${e.battleId} (${e.regionName})\n` +
-          `Side *${e.sideA.side}* landed (${sideAVerified}), but *${e.stage}* failed:\n` +
-          `\`${e.cause.message.slice(0, 200)}\`\n` +
-          `Fuel barrel spent; the other side's medal is at risk — finish manually on battlefield.`;
-        await Promise.resolve(cfg.notify?.(alert)).catch(() => undefined);
+        const sideAVerified = e.sideA.verified ? 'verified' : 'unverified';
+        await Promise.resolve(
+          cfg.notify?.(
+            formatBattleFailureMessage(
+              {
+                battleId: c.battleId,
+                battleZoneId: c.battleZoneId,
+                regionName: c.regionName,
+                invaderCountryId: c.invaderId,
+                defenderCountryId: c.defenderId,
+                division: FARM_DIVISION,
+              },
+              `partial — side ${e.sideA.side} (${sideAVerified}), ${e.stage}: ${e.cause.message}`,
+            ),
+          ),
+        ).catch(() => undefined);
         skipped.push({
           battleId: c.battleId,
           regionName: c.regionName,
@@ -578,6 +603,21 @@ async function runMaverickD3(
         stopReason = 'energy-exhausted';
         break;
       }
+      await Promise.resolve(
+        cfg.notify?.(
+          formatBattleFailureMessage(
+            {
+              battleId: c.battleId,
+              battleZoneId: c.battleZoneId,
+              regionName: c.regionName,
+              invaderCountryId: c.invaderId,
+              defenderCountryId: c.defenderId,
+              division: FARM_DIVISION,
+            },
+            msg,
+          ),
+        ),
+      ).catch(() => undefined);
       skipped.push({ battleId: c.battleId, regionName: c.regionName, reason: msg });
     }
   }

@@ -36,6 +36,10 @@ import {
   type StopReason,
   type WinSummary,
 } from './types.js';
+import {
+  formatBattleFailureMessage,
+  formatBattleSuccessMessage,
+} from '../../util/battleNotification.js';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -442,17 +446,38 @@ async function runStandard(
       );
       farmedCount++;
       wins.push({ battleId: c.battleId, regionName: c.regionName, inv, def });
+      await Promise.resolve(
+        cfg.notify?.(
+          formatBattleSuccessMessage({
+            battleId: c.battleId,
+            battleZoneId: c.battleZoneId,
+            regionName: c.regionName,
+            invaderCountryId: c.invaderId,
+            defenderCountryId: c.defenderId,
+            division: info.division,
+          }),
+        ),
+      ).catch(() => undefined);
     } catch (e) {
       const msg = (e as Error).message;
       console.log(`   ❌ ${msg}`);
       if (e instanceof PartialBattleError) {
-        const sideAVerified = e.sideA.verified ? '✅verified' : '⚠unverified';
-        const alert =
-          `⚠️ *Partial battle* #${e.battleId} (${e.regionName})\n` +
-          `Side *${e.sideA.side}* landed (${sideAVerified}), but *${e.stage}* failed:\n` +
-          `\`${e.cause.message.slice(0, 200)}\`\n` +
-          `Fuel barrel spent; the other side's medal is at risk — finish manually on battlefield.`;
-        await Promise.resolve(cfg.notify?.(alert)).catch(() => undefined);
+        const sideAVerified = e.sideA.verified ? 'verified' : 'unverified';
+        await Promise.resolve(
+          cfg.notify?.(
+            formatBattleFailureMessage(
+              {
+                battleId: c.battleId,
+                battleZoneId: c.battleZoneId,
+                regionName: c.regionName,
+                invaderCountryId: c.invaderId,
+                defenderCountryId: c.defenderId,
+                division: info.division,
+              },
+              `partial — side ${e.sideA.side} (${sideAVerified}), ${e.stage}: ${e.cause.message}`,
+            ),
+          ),
+        ).catch(() => undefined);
         skipped.push({
           battleId: c.battleId,
           regionName: c.regionName,
@@ -469,6 +494,21 @@ async function runStandard(
         stopReason = 'energy-exhausted';
         break;
       }
+      await Promise.resolve(
+        cfg.notify?.(
+          formatBattleFailureMessage(
+            {
+              battleId: c.battleId,
+              battleZoneId: c.battleZoneId,
+              regionName: c.regionName,
+              invaderCountryId: c.invaderId,
+              defenderCountryId: c.defenderId,
+              division: info.division,
+            },
+            msg,
+          ),
+        ),
+      ).catch(() => undefined);
       skipped.push({ battleId: c.battleId, regionName: c.regionName, reason: msg });
     }
   }

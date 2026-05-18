@@ -15,6 +15,10 @@ import {
   type SkipSummary,
   type StopReason,
 } from './types.js';
+import {
+  formatBattleFailureMessage,
+  formatBattleSuccessMessage,
+} from '../../util/battleNotification.js';
 
 const ENERGY_PER_HIT = 10;
 const MIN_DEPLOY_ENERGY = 30; // game minimum for normal weapon / bare hands
@@ -186,10 +190,24 @@ async function runD4TW(
     const ammoOk = weapon.amountOnHand === Infinity || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {
       const msg =
-        `D4-TW: skipped battle ${battle.battleId} (${battle.regionName}) — need ${energyToSpend}e + ${hitsNeeded} ammo, ` +
-        `have ${poolEnergy}e / ${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand} ammo`;
-      console.log(`[d4tw] ${msg}`);
-      await Promise.resolve(options.notify?.(`⚠️ ${msg}`)).catch(() => undefined);
+        `need ${energyToSpend}e + ${hitsNeeded} ammo, have ${poolEnergy}e / ` +
+        `${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand} ammo`;
+      console.log(`[d4tw] skipped battle ${battle.battleId} (${battle.regionName}) — ${msg}`);
+      await Promise.resolve(
+        options.notify?.(
+          formatBattleFailureMessage(
+            {
+              battleId: battle.battleId,
+              battleZoneId: battle.battleZoneId,
+              regionName: battle.regionName,
+              invaderCountryId: battle.invaderId,
+              defenderCountryId: battle.defenderId,
+              division: info.division,
+            },
+            msg,
+          ),
+        ),
+      ).catch(() => undefined);
       skipped.push({ battleId: battle.battleId, regionName: battle.regionName, reason: msg });
       continue;
     }
@@ -246,9 +264,21 @@ async function runD4TW(
     if (!result.success) {
       const msg = `deploy failed: ${result.message}`;
       console.log(`[d4tw]    ❌ ${msg}`);
-      await Promise.resolve(options.notify?.(`❌ D4-TW #${battle.battleId}: ${msg}`)).catch(
-        () => undefined,
-      );
+      await Promise.resolve(
+        options.notify?.(
+          formatBattleFailureMessage(
+            {
+              battleId: battle.battleId,
+              battleZoneId: battle.battleZoneId,
+              regionName: battle.regionName,
+              invaderCountryId: battle.invaderId,
+              defenderCountryId: battle.defenderId,
+              division: info.division,
+            },
+            msg,
+          ),
+        ),
+      ).catch(() => undefined);
       skipped.push({ battleId: battle.battleId, regionName: battle.regionName, reason: msg });
       continue;
     }
@@ -278,6 +308,18 @@ async function runD4TW(
       inv: mySide === 'invader' ? outcome : otherOutcome,
       def: mySide === 'defender' ? outcome : otherOutcome,
     });
+    await Promise.resolve(
+      options.notify?.(
+        formatBattleSuccessMessage({
+          battleId: battle.battleId,
+          battleZoneId: battle.battleZoneId,
+          regionName: battle.regionName,
+          invaderCountryId: battle.invaderId,
+          defenderCountryId: battle.defenderId,
+          division: info.division,
+        }),
+      ),
+    ).catch(() => undefined);
   }
 
   return {
