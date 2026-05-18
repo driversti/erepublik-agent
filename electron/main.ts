@@ -40,6 +40,11 @@ function createWizardWindow() {
     },
   });
   wizardWindow.loadFile(path.resolve(__dirname, 'wizard', 'index.html'));
+  // During beta, auto-open DevTools so testers can see console errors and
+  // share screenshots. Removed before v1.0.
+  if (app.getVersion().includes('beta') || process.env.ERP_DEBUG === '1') {
+    wizardWindow.webContents.openDevTools({ mode: 'detach' });
+  }
   wizardWindow.on('closed', () => {
     wizardWindow = undefined;
   });
@@ -278,23 +283,24 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('wizard:pickLegacyFolder', async () => {
-    const parent = wizardWindow ?? dashboardWindow;
-    const result = parent
-      ? await dialog.showOpenDialog(parent, {
-          title: 'Select your existing .bat install folder',
-          properties: ['openDirectory'],
-        })
-      : await dialog.showOpenDialog({
-          title: 'Select your existing .bat install folder',
-          properties: ['openDirectory'],
-        });
-    if (result.canceled || result.filePaths.length === 0) return null;
-    const folder = result.filePaths[0];
-    const detected = detectLegacyInstall(folder);
-    if (!detected) {
-      return { ok: false, error: 'Selected folder does not look like a .bat install (missing markers).' };
+    // Use a top-level dialog (no parent) so it can't get hidden behind the
+    // wizard window on Windows. On macOS this opens a sheet-less modal.
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select your existing .bat install folder',
+        properties: ['openDirectory'],
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      const folder = result.filePaths[0];
+      const detected = detectLegacyInstall(folder);
+      if (!detected) {
+        return { ok: false, error: 'Selected folder does not look like a .bat install (missing markers).' };
+      }
+      return { ok: true, info: detected };
+    } catch (err) {
+      console.error('[main] pickLegacyFolder failed', err);
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    return { ok: true, info: detected };
   });
 
   ipcMain.handle('wizard:importLegacy', async (event, folder: string) => {

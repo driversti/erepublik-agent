@@ -1,6 +1,17 @@
 import { validateWizardForm } from './formValidation.js';
 import { suggestCountries, parseChips } from './countryPicker.js';
 
+// Beta-only: surface any uncaught error visibly so testers don't see "nothing
+// happens" without context.
+window.addEventListener('error', (e) => {
+  alert(`Unhandled error in wizard: ${e.message}\nLine ${e.lineno}:${e.colno}`);
+  console.error('[wizard] global error', e);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  alert(`Unhandled promise rejection in wizard: ${e.reason && e.reason.message ? e.reason.message : e.reason}`);
+  console.error('[wizard] unhandled rejection', e.reason);
+});
+
 const state = { current: 1, values: null };
 function show(step) {
   state.current = step;
@@ -159,9 +170,14 @@ step3Start.addEventListener('click', async () => {
 });
 
 document.getElementById('import-link').addEventListener('click', async () => {
-  const picked = await window.electronAPI.pickLegacyFolder();
-  if (!picked) return;
-  if (!picked.ok) { alert(picked.error); return; }
+  try {
+    if (!window.electronAPI || typeof window.electronAPI.pickLegacyFolder !== 'function') {
+      alert('Import is not available — electronAPI bridge is missing. This is a bug; please report.');
+      return;
+    }
+    const picked = await window.electronAPI.pickLegacyFolder();
+    if (!picked) return;
+    if (!picked.ok) { alert(picked.error); return; }
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#cdd6f4; z-index:100;';
@@ -188,5 +204,9 @@ document.getElementById('import-link').addEventListener('click', async () => {
   } else {
     alert('Import successful, but your existing login has expired. You will need to sign in again.');
     show(2);
+  }
+  } catch (err) {
+    alert(`Import failed unexpectedly: ${err && err.message ? err.message : err}`);
+    console.error('[wizard] import error', err);
   }
 });
