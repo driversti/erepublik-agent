@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import { createRunnerSupervisor } from './runnerSupervisor.js';
 import { createTray, openLogsFolder } from './tray.js';
 import { checkFirstRun } from './firstRun.js';
+import { configureUpdater, manualCheck, showManualResultDialog } from './updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -127,8 +128,9 @@ app.whenReady().then(() => {
       if (!wizardWindow) createWizardWindow();
       else wizardWindow.focus();
     },
-    onCheckForUpdates: () => {
-      tray?.showBalloon('erepublik-agent', 'Update check not yet wired in this build.');
+    onCheckForUpdates: async () => {
+      const result = await manualCheck();
+      showManualResultDialog(dashboardWindow, result);
     },
     onToggleAutostart: () => {
       const cur = app.getLoginItemSettings().openAtLogin;
@@ -144,6 +146,16 @@ app.whenReady().then(() => {
   });
   tray.setState({
     autostart: app.getLoginItemSettings().openAtLogin,
+  });
+
+  configureUpdater({
+    onUpdateAvailable: (v) => {
+      tray?.showBalloon('erepublik-agent', `Update available: v${v}. Quit to install.`);
+    },
+    onUpdateNotAvailable: () => {},
+    onError: (err) => {
+      console.warn('[updater]', err.message);
+    },
   });
 
   supervisor.onReady((port) => {
