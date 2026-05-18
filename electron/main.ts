@@ -23,6 +23,26 @@ let isQuitting = false;
 let isPaused = false;
 const supervisor = createRunnerSupervisor();
 
+function createWizardWindow() {
+  wizardWindow = new BrowserWindow({
+    width: 760,
+    height: 700,
+    title: 'erepublik-agent setup',
+    icon: path.join(__dirname, '../electron/icons/icon.ico'),
+    resizable: false,
+    maximizable: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.resolve(__dirname, 'preload.js'),
+    },
+  });
+  wizardWindow.loadFile(path.resolve(__dirname, 'wizard', 'index.html'));
+  wizardWindow.on('closed', () => {
+    wizardWindow = undefined;
+  });
+}
+
 function createDashboardWindow(port: number) {
   if (dashboardWindow) {
     if (dashboardWindow.isMinimized()) dashboardWindow.restore();
@@ -104,7 +124,8 @@ app.whenReady().then(() => {
     },
     onOpenLogs: openLogsFolder,
     onReconfigure: () => {
-      tray?.showBalloon('erepublik-agent', 'Reconfigure not yet wired in this build.');
+      if (!wizardWindow) createWizardWindow();
+      else wizardWindow.focus();
     },
     onCheckForUpdates: () => {
       tray?.showBalloon('erepublik-agent', 'Update check not yet wired in this build.');
@@ -142,9 +163,6 @@ app.whenReady().then(() => {
       'Bot stopped after repeated crashes. Right-click → Open logs folder.',
     );
   });
-
-  const firstRun = checkFirstRun(app.getPath('userData'));
-  console.log(`[main] first-run check: ${firstRun.reason} (needsWizard=${firstRun.needsWizard})`);
 
   ipcMain.handle('wizard:saveConfig', async (_, raw: any) => {
     const userData = app.getPath('userData');
@@ -201,8 +219,15 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
-  // TODO(Task 16): gate on checkFirstRun(); skip when wizard is shown.
-  supervisor.start();
+  const firstRun = checkFirstRun(app.getPath('userData'));
+  if (firstRun.needsWizard) {
+    console.log(`[main] first-run check: ${firstRun.reason} — opening wizard`);
+    createWizardWindow();
+    // Supervisor stays idle until wizard:finish triggers supervisor.start().
+  } else {
+    console.log(`[main] first-run check: ok — starting supervisor`);
+    supervisor.start();
+  }
 });
 
 app.on('window-all-closed', () => {
