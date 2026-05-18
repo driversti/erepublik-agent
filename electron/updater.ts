@@ -1,4 +1,7 @@
-import { autoUpdater } from 'electron-updater';
+// electron-updater is a CommonJS module; in ESM context we must use the
+// default import + destructure pattern instead of named imports.
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import { dialog, app, type BrowserWindow } from 'electron';
 
 export interface UpdaterCallbacks {
