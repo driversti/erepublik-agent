@@ -18,7 +18,7 @@
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/ui/public','dist/ui/public',{recursive:true})\"",
-    "build:electron": "tsc -p electron/tsconfig.json && node -e \"require('fs').cpSync('electron/wizard','electron-dist/wizard',{recursive:true})\" && node -e \"require('fs').cpSync('electron/icons','electron-dist/icons',{recursive:true})\"",
+    "build:electron": "tsc -p electron/tsconfig.json && node -e \"require('fs').cpSync('electron/wizard','electron-dist/wizard',{recursive:true})\" && node -e \"require('fs').cpSync('electron/icons','electron-dist/icons',{recursive:true})\" && node -e \"require('fs').cpSync('data/countries.json','electron-dist/wizard/countries.json')\"",
     "start:electron": "npm run build && npm run build:electron && electron electron-dist/main.js",
     "dist:electron": "npm run build && npm run build:electron && electron-builder --win nsis --x64",
     "typecheck": "tsc --noEmit",

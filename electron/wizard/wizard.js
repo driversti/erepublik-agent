@@ -1,4 +1,5 @@
 import { validateWizardForm } from './formValidation.js';
+import { suggestCountries, parseChips } from './countryPicker.js';
 
 const state = { current: 1, values: null };
 function show(step) {
@@ -55,6 +56,45 @@ document.getElementById('step1-next').addEventListener('click', () => {
   }
   state.values = result.values;
   show(2);
+});
+
+let countryCatalog = [];
+fetch('countries.json').then(r => r.json()).then(j => { countryCatalog = j; });
+
+const blockedInput = document.getElementById('blockedCountries');
+const errEl = document.getElementById('blockedCountries-error');
+const suggestBox = document.createElement('div');
+suggestBox.style.cssText = 'position:absolute; background:#313244; border:1px solid #45475a; max-height:240px; overflow-y:auto; z-index:10;';
+suggestBox.style.display = 'none';
+blockedInput.parentElement.style.position = 'relative';
+blockedInput.parentElement.appendChild(suggestBox);
+
+blockedInput.addEventListener('input', () => {
+  const trailing = blockedInput.value.split(',').pop().trim();
+  const matches = suggestCountries(trailing, countryCatalog);
+  if (matches.length === 0) { suggestBox.style.display = 'none'; return; }
+  suggestBox.innerHTML = '';
+  for (const c of matches) {
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:6px 10px; cursor:pointer;';
+    item.textContent = c.name;
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const parts = blockedInput.value.split(',').map(s => s.trim()).filter(Boolean);
+      parts.pop();
+      parts.push(c.name);
+      blockedInput.value = parts.join(', ') + ', ';
+      suggestBox.style.display = 'none';
+      blockedInput.focus();
+    });
+    suggestBox.appendChild(item);
+  }
+  suggestBox.style.display = 'block';
+});
+blockedInput.addEventListener('blur', () => setTimeout(() => { suggestBox.style.display = 'none'; }, 200));
+blockedInput.addEventListener('change', () => {
+  const { unknown } = parseChips(blockedInput.value, countryCatalog);
+  errEl.textContent = unknown.length > 0 ? `Unknown country: ${unknown.join(', ')}` : '';
 });
 
 document.getElementById('step2-back').addEventListener('click', () => show(1));
