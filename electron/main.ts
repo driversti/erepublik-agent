@@ -145,6 +145,7 @@ app.whenReady().then(() => {
     },
     onQuit: async () => {
       isQuitting = true;
+      updaterHandle.dispose();
       await supervisor.stop();
       tray?.destroy();
       app.quit();
@@ -154,7 +155,7 @@ app.whenReady().then(() => {
     autostart: app.getLoginItemSettings().openAtLogin,
   });
 
-  configureUpdater({
+  const updaterHandle = configureUpdater({
     onUpdateAvailable: (v) => {
       tray?.showBalloon('erepublik-agent', `Update available: v${v}. Quit to install.`);
     },
