@@ -13,6 +13,32 @@ Both workloads are fully **deterministic** — no LLM is on the hot path. Every 
 
 ---
 
+## Install (Windows)
+
+1. Download `erepublik-agent-Setup-X.Y.Z-x64.exe` from the latest GitHub Release or Telegram channel.
+2. Double-click the installer; choose any folder when prompted. No admin rights required.
+3. The setup wizard opens. Fill in your eRepublik email/password and tuning options, sign in through the headed browser window that appears, then click "Start bot".
+4. The app lives in your system tray. Left-click for the dashboard; right-click for Pause / Quit / Settings.
+
+### Migrating from the old .bat distribution
+
+The wizard's step 1 has a banner: "Already running the old ZIP version? Import existing setup →". Click it, point to your old folder, and your sessions/, config/, and chromium-cache/ are copied — no re-login, no Chromium re-download.
+
+### Developer workflow
+
+```bash
+git clone <repo-url>
+cd erepublik-agent
+npm install
+npm run bootstrap   # one-shot manual login
+npm run agent       # one daily cycle
+npm start           # long-running with dashboard
+```
+
+(Developer workflow is unchanged. The Electron build is the *user* distribution; developers keep using tsx.)
+
+---
+
 ## Setup
 
 ```bash

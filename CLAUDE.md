@@ -35,6 +35,14 @@ npm run debug-deploy     # one-shot deploy probe with verbose request/response l
 npm run debug-headers    # dumps headers the in-page fetch is sending (useful when eRepublik returns 403)
 ```
 
+## Electron distribution build
+
+```bash
+npm run build:electron   # compile electron/ → electron-dist/
+npm run start:electron   # local dev: build + run electron app
+npm run dist:electron    # produce a Windows installer (release/ dir)
+```
+
 Tests use vitest — co-located `*.test.ts` files cover `fuelBudget`, `modeSelector`, `pickWeapon`, `pickBomb`, `damageFormula`, `resolveCountries`, and the UI primitives (`settingsStore`, `historyStore`, `logsTail`, `sleepUntilWake`, `server`). No lint command is wired up.
 
 A new account always starts with `bootstrap` to populate `sessions/profile/{ERP_ACCOUNT_SLUG}/`. Subsequent runs reuse that profile via `openSession` and never touch `ERP_LOGIN`/`ERP_PASSWORD`.
