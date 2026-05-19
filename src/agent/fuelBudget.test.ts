@@ -19,6 +19,49 @@ function weekly(overrides: Partial<WeeklyFuelState> = {}): WeeklyFuelState {
   };
 }
 
+describe('decideFarming minEnergyPerBattle override', () => {
+  const baseWeekly: WeeklyFuelState = {
+    week: 0,
+    spent: 0,
+    hitsLanded: 0,
+    lastFarmedAt: null,
+    nextEligibleAt: null,
+    cyclesSkipped: 0,
+    weekStartInventory: null,
+  };
+
+  it('uses ENERGY_PER_BATTLE (66) by default', () => {
+    const d = decideFarming({
+      weekly: baseWeekly,
+      poolEnergy: 50,
+      fuelInInventory: 5,
+    });
+    expect(d.shouldFarm).toBe(false);
+    expect(d.reason).toMatch(/50 < 66/);
+  });
+
+  it('uses minEnergyPerBattle when supplied', () => {
+    const d = decideFarming({
+      weekly: baseWeekly,
+      poolEnergy: 40,
+      fuelInInventory: 5,
+      minEnergyPerBattle: 30,
+    });
+    expect(d.shouldFarm).toBe(true);
+  });
+
+  it('still blocks when pool is below the supplied minEnergyPerBattle', () => {
+    const d = decideFarming({
+      weekly: baseWeekly,
+      poolEnergy: 20,
+      fuelInInventory: 5,
+      minEnergyPerBattle: 30,
+    });
+    expect(d.shouldFarm).toBe(false);
+    expect(d.reason).toMatch(/20 < 30/);
+  });
+});
+
 describe('decideFarming — maxBattlesPerSession cap', () => {
   it('uses DEFAULT_MAX_BATTLES_PER_SESSION (3) when not specified', () => {
     const decision = decideFarming({
