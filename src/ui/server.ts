@@ -137,7 +137,11 @@ function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): 
     return;
   }
 
-  if (path === '/') return sendStatic(res, 'index.html', 'text/html; charset=utf-8');
+  if (path === '/') return sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8');
+  if (path === '/console') return sendStatic(res, 'dashboard-console.html', 'text/html; charset=utf-8');
+  if (path === '/tabs') return sendStatic(res, 'dashboard-tabs.html', 'text/html; charset=utf-8');
+  if (path === '/minimal') return sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8');
+  if (path === '/legacy') return sendStatic(res, 'index.html', 'text/html; charset=utf-8');
   if (path === '/app.js') return sendStatic(res, 'app.js', 'application/javascript; charset=utf-8');
   if (path === '/styles.css') return sendStatic(res, 'styles.css', 'text/css; charset=utf-8');
 

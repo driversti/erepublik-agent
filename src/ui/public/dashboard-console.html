@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f17">
+  <title>erepublik-agent · console</title>
+  <style>
+    /* ============================================================
+       MOBILE-FIRST: base styles target small screens. Media queries
+       progressively enhance for ≥640px (sm) and ≥960px (md).
+       ============================================================ */
+    :root {
+      --bg: #0b0f17;
+      --panel: #111827;
+      --panel-2: #0f172a;
+      --border: #1f2937;
+      --border-soft: #1a2333;
+      --fg: #e5e7eb;
+      --fg-dim: #9ca3af;
+      --fg-mute: #6b7280;
+      --accent: #22d3ee;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --radius: 10px;
+      --tap: 44px; /* minimum touch target */
+      --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg); color: var(--fg);
+      font-family: var(--sans); font-size: 14px; line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+    a { color: inherit; text-decoration: none; }
+    code, pre { font-family: var(--mono); }
+    pre { margin: 0; }
+    button { font-family: inherit; }
+
+    /* ---------- MOBILE: sticky top header + slide-in drawer ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      background: rgba(11,15,23,0.92); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding-top: max(10px, env(safe-area-inset-top));
+    }
+    .menu-btn {
+      width: var(--tap); height: var(--tap);
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--fg); cursor: pointer;
+    }
+    .menu-btn svg { width: 20px; height: 20px; }
+    .brand-mobile { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; flex: 1; }
+    .brand-mobile .name { font-weight: 700; font-size: 14px; }
+    .brand-mobile .acct { font-size: 12px; color: var(--fg-dim); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Drawer (mobile) */
+    .drawer-backdrop {
+      position: fixed; inset: 0; z-index: 40;
+      background: rgba(0,0,0,0.55);
+      opacity: 0; pointer-events: none; transition: opacity 180ms ease;
+    }
+    .drawer {
+      position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
+      width: min(82vw, 280px);
+      background: linear-gradient(180deg, #0a0f1c, #0b1220);
+      border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 220ms ease;
+      display: flex; flex-direction: column;
+      padding-top: env(safe-area-inset-top);
+    }
+    #drawer-toggle { display: none; }
+    #drawer-toggle:checked ~ .drawer-backdrop { opacity: 1; pointer-events: auto; }
+    #drawer-toggle:checked ~ .drawer { transform: translateX(0); }
+
+    .sidebar-inner { padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; height: 100%; }
+    .brand { display: flex; flex-direction: column; gap: 2px; }
+    .brand .name { font-weight: 700; letter-spacing: 0.02em; }
+    .brand .sub { font-size: 11px; color: var(--fg-mute); font-family: var(--mono); }
+
+    .nav { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+    .nav a {
+      min-height: var(--tap);
+      padding: 10px 12px; border-radius: 8px;
+      color: var(--fg-dim); font-size: 14px;
+      display: flex; align-items: center; gap: 10px;
+      transition: background 120ms, color 120ms;
+    }
+    .nav a:active, .nav a:hover { background: rgba(255,255,255,0.06); color: var(--fg); }
+    .nav .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.7; }
+
+    .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .meta-line { display: flex; justify-content: space-between; font-size: 11px; color: var(--fg-mute); font-family: var(--mono); }
+
+    /* ---------- Status pill (works inside topbar on mobile) ---------- */
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+      background: #1f2937; color: var(--fg-dim);
+      white-space: nowrap;
+    }
+    .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pill.running, .bg-emerald-500 { background: rgba(52,211,153,0.14); color: var(--ok); }
+    .pill.paused, .bg-amber-500 { background: rgba(251,191,36,0.14); color: var(--warn); }
+    .bg-gray-700 { background: #374151; color: var(--fg-dim); }
+
+    /* ---------- Main column ---------- */
+    main {
+      padding: 14px;
+      padding-bottom: calc(40px + env(safe-area-inset-bottom));
+    }
+
+    /* Section card */
+    .section {
+      background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 12px; overflow: hidden;
+      scroll-margin-top: 80px;
+    }
+    .section-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    }
+    .section-head h2 {
+      margin: 0; font-size: 12px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--fg); font-family: var(--mono);
+    }
+    .section-head .tag {
+      font-size: 10.5px; color: var(--fg-mute);
+      padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px;
+      font-family: var(--mono);
+    }
+    .section-head .spacer { flex: 1; }
+    .section-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* ---------- Grids — single col default, multi on ≥640px ---------- */
+    .grid-2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 640px) { .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+    /* Status list */
+    #status-grid {
+      display: grid; grid-template-columns: max-content 1fr;
+      gap: 4px 14px; font-size: 13px; margin: 0;
+    }
+    #status-grid dt {
+      color: var(--fg-mute); font-family: var(--mono);
+      font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    #status-grid dd { margin: 0; color: var(--fg); font-family: var(--mono); word-break: break-word; }
+
+    /* Bars */
+    .bar-row { display: flex; flex-direction: column; gap: 4px; }
+    .bar-row .label {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--fg-mute); font-family: var(--mono);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .bar-track { height: 8px; background: #1f2937; border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 280ms ease; }
+    #energy-bar { background: linear-gradient(90deg, #22d3ee, #818cf8); }
+    #fuel-bar { background: linear-gradient(90deg, #fbbf24, #f97316); }
+
+    /* Daily actions */
+    #daily-actions {
+      list-style: none; margin: 0; padding: 0;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    @media (min-width: 640px) {
+      #daily-actions { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    }
+    #daily-actions li {
+      min-height: var(--tap);
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px;
+      background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px;
+      font-size: 13px; font-family: var(--mono);
+    }
+
+    /* Forms */
+    label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--fg-dim); }
+    label.field > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-mute); font-family: var(--mono); }
+    label.inline {
+      min-height: var(--tap);
+      display: inline-flex; align-items: center; gap: 10px;
+      font-size: 14px; cursor: pointer; padding: 4px 0;
+    }
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      min-height: var(--tap);
+      background: var(--panel-2); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 12px; font-size: 15px; /* ≥16 mobile to skip zoom-on-focus, but 15 looks fine here */
+      font-family: var(--mono); outline: none;
+      transition: border-color 120ms;
+      -webkit-appearance: none; appearance: none;
+    }
+    select:focus, input:focus { border-color: var(--accent); }
+    input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+
+    .subcard {
+      background: var(--panel-2); border: 1px solid var(--border-soft);
+      border-radius: 8px; padding: 12px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .subcard h3 {
+      margin: 0; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--fg-dim);
+      font-family: var(--mono); font-weight: 600;
+    }
+    .hint {
+      font-size: 12px; color: var(--fg-mute); line-height: 1.5; margin: 0;
+    }
+    .hint code { background: var(--bg); padding: 1px 6px; border-radius: 4px; color: var(--accent); }
+
+    button.btn {
+      min-height: var(--tap);
+      background: linear-gradient(180deg, #2563eb, #1d4ed8);
+      color: white; border: 0;
+      padding: 10px 18px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: filter 120ms;
+    }
+    button.btn:active:not(:disabled) { filter: brightness(0.92); }
+    button.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* History + logs */
+    #history-list {
+      list-style: none; margin: 0; padding: 0;
+      display: flex; flex-direction: column; gap: 4px;
+      max-height: 320px; overflow-y: auto;
+      font-family: var(--mono); font-size: 12.5px;
+      -webkit-overflow-scrolling: touch;
+    }
+    #history-list li {
+      padding: 8px 10px; background: var(--panel-2);
+      border: 1px solid var(--border-soft); border-radius: 6px;
+    }
+
+    #logs {
+      background: #060a13; color: #cbd5e1;
+      border: 1px solid var(--border-soft); border-radius: 8px;
+      padding: 10px 12px; font-size: 11.5px;
+      height: 280px; overflow-y: auto; white-space: pre-wrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    #settings-json {
+      background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 8px;
+      padding: 10px 12px; font-size: 11.5px; overflow-x: auto;
+    }
+    details summary {
+      min-height: 32px;
+      cursor: pointer; color: var(--fg-mute);
+      font-size: 12px; font-family: var(--mono);
+      padding: 4px 0; user-select: none;
+    }
+
+    /* Color hooks app.js assigns dynamically */
+    .text-gray-500, .text-gray-400 { color: var(--fg-mute) !important; }
+    .text-emerald-600 { color: var(--ok) !important; }
+    .text-red-600 { color: var(--err) !important; }
+
+    /* ============================================================
+       DESKTOP (≥960px): permanent sidebar, drawer hidden
+       ============================================================ */
+    @media (min-width: 960px) {
+      body { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+      .topbar { display: none; }
+      .menu-btn { display: none; }
+      .drawer-backdrop { display: none; }
+      .drawer {
+        position: sticky; top: 0; left: 0;
+        height: 100vh;
+        transform: none; transition: none;
+        width: 240px;
+      }
+      main { padding: 22px 28px 60px; max-width: 1200px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Drawer toggle (CSS-only, no JS conflict with app.js) -->
+  <input type="checkbox" id="drawer-toggle" hidden>
+
+  <!-- Mobile top bar -->
+  <header class="topbar">
+    <label for="drawer-toggle" class="menu-btn" aria-label="Toggle menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </label>
+    <div class="brand-mobile">
+      <span class="name">erepublik-agent</span>
+      <span class="acct" id="header-account">—</span>
+    </div>
+    <span id="status-pill" class="pill bg-gray-700">loading…</span>
+  </header>
+
+  <!-- Drawer backdrop (closes drawer when tapped) -->
+  <label for="drawer-toggle" class="drawer-backdrop" aria-hidden="true"></label>
+
+  <!-- Sidebar / drawer -->
+  <aside class="drawer">
+    <div class="sidebar-inner">
+      <div class="brand">
+        <span class="name">erepublik-agent</span>
+        <span class="sub">// console</span>
+      </div>
+      <nav class="nav">
+        <a href="#overview"><span class="dot"></span>Overview</a>
+        <a href="#strategy"><span class="dot"></span>Strategy</a>
+        <a href="#daily"><span class="dot"></span>Daily actions</a>
+        <a href="#controls"><span class="dot"></span>Controls</a>
+        <a href="#history"><span class="dot"></span>Activity</a>
+        <a href="#logs-section"><span class="dot"></span>Logs</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="meta-line"><span>last cycle</span><span id="last-updated">—</span></div>
+        <div class="meta-line"><span>save</span><span id="save-indicator">—</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="overview" class="section">
+      <header class="section-head">
+        <h2>Overview</h2>
+        <span class="tag">live</span>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <dl id="status-grid"></dl>
+          <div style="display:flex; flex-direction: column; gap: 14px;">
+            <div class="bar-row">
+              <div class="label"><span>Energy</span><span id="energy-text">—</span></div>
+              <div class="bar-track"><div id="energy-bar" class="bar-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="label"><span>Fuel barrels</span><span id="fuel-text">—</span></div>
+              <div class="bar-track"><div id="fuel-bar" class="bar-fill" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STRATEGY -->
+    <section id="strategy" class="section">
+      <header class="section-head">
+        <h2>Farm strategy</h2>
+        <span class="tag">writable</span>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <label class="field">
+            <span>Mode</span>
+            <select id="mode-override">
+              <option value="">Auto</option>
+              <option value="standard">Standard (D1-D3 empty-div)</option>
+              <option value="d4tw">D4-TW (native, hit to target)</option>
+              <option value="d4tw-air">D4 TW (air, low-strength medals)</option>
+              <option value="maverickD3">Maverick-D3 (D3 empty-div)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Maverick override</span>
+            <select id="maverick-manual">
+              <option value="">Auto-detect</option>
+              <option value="true">YES</option>
+              <option value="false">NO</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="subcard">
+          <h3>Empty-division (Standard / Maverick-D3)</h3>
+          <label class="field">
+            <span>Max battles per session</span>
+            <input id="emptyDiv-maxBattles" type="number" min="1" max="10">
+          </label>
+          <p class="hint">Hard cap on empty-division battles per farm cycle (~10 min). Energy / fuel / weekly-pace limits may lower the effective number. Default <code>3</code>. Env seed: <code>ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION</code>.</p>
+        </div>
+
+        <div class="subcard">
+          <h3>D4-TW (native)</h3>
+          <div class="grid-2">
+            <label class="field"><span>Target damage (attacker)</span><input id="d4tw-attacker" type="number" min="1"></label>
+            <label class="field"><span>Target damage (defender)</span><input id="d4tw-defender" type="number" min="1"></label>
+            <label class="field"><span>Max battles per session</span><input id="d4tw-maxBattles" type="number" min="1" max="10"></label>
+            <label class="field"><span>Weapon priority (read-only)</span><code id="d4tw-weapons">—</code></label>
+          </div>
+          <p class="hint">Caps how many TW battles fight per cycle (~10 min). Each TW battle is 1500–3000 energy — usually one fits per full pool.</p>
+        </div>
+
+        <div class="subcard">
+          <h3>D4 TW (air)</h3>
+          <div class="grid-2">
+            <label class="field"><span>Target damage (attacker)</span><input id="d4twAir-attacker" type="number" min="1" step="1000"></label>
+            <label class="field"><span>Target damage (defender)</span><input id="d4twAir-defender" type="number" min="1" step="1000"></label>
+            <label class="field"><span>Max battles per session</span><input id="d4twAir-maxBattles" type="number" min="1" max="10"></label>
+            <label class="inline"><input id="d4twAir-useWeapon" type="checkbox"> Use aircraft weapon (Q5→Q1)</label>
+            <label class="field"><span>Weapon priority (read-only)</span><code id="d4twAir-weapons">—</code></label>
+            <label class="field"><span>Detected aircraft rank</span><span id="detected-airRank">—</span></label>
+          </div>
+          <p class="hint">Air mode fires low-strength hits to earn air medals in D4 TW battles.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAILY -->
+    <section id="daily" class="section">
+      <header class="section-head">
+        <h2>Today's actions</h2>
+        <span class="tag">resets 00:00 PST</span>
+      </header>
+      <div class="section-body">
+        <ul id="daily-actions"></ul>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <section id="controls" class="section">
+      <header class="section-head">
+        <h2>Controls</h2>
+        <span class="spacer"></span>
+        <button id="btn-run-now" class="btn" type="button">Run now</button>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <label class="inline"><input id="toggle-paused" type="checkbox"> Pause bot (skips entire cycle)</label>
+          <label class="inline"><input id="toggle-farmEnabled" type="checkbox"> Farm enabled (skip gate when off)</label>
+        </div>
+        <p class="hint" id="run-now-hint">Wakes the runner immediately if it's sleeping.</p>
+
+        <div class="subcard">
+          <h3>Farm session cooldown</h3>
+          <div class="grid-2">
+            <label class="field"><span>Min minutes between sessions</span><input id="cooldown-min" type="number" min="0"></label>
+            <label class="field"><span>Max minutes between sessions</span><input id="cooldown-max" type="number" min="0"></label>
+          </div>
+          <p class="hint">After each farm session the bot picks a random wait time in this range before becoming eligible again. Defaults: 30–90 minutes.</p>
+        </div>
+
+        <details>
+          <summary>Raw settings JSON</summary>
+          <pre id="settings-json">loading…</pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="history" class="section">
+      <header class="section-head">
+        <h2>Recent activity</h2>
+        <span class="tag">last 20</span>
+      </header>
+      <div class="section-body">
+        <ul id="history-list"></ul>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section id="logs-section" class="section">
+      <header class="section-head">
+        <h2>Live logs</h2>
+        <span class="tag">last 100 lines</span>
+      </header>
+      <div class="section-body">
+        <pre id="logs">—</pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Close drawer after tapping any nav link on mobile -->
+  <script>
+    document.querySelectorAll('.drawer .nav a').forEach(a => {
+      a.addEventListener('click', () => {
+        const t = document.getElementById('drawer-toggle');
+        if (t) t.checked = false;
+      });
+    });
+  </script>
+  <script src="/app.js"></script>
+</body>
+</html>

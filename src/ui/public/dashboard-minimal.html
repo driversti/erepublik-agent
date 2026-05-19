@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fafafa">
+  <title>erepublik-agent · minimal</title>
+  <style>
+    /* ============================================================
+       MOBILE-FIRST. Native-app feel: sticky compact header on top,
+       bottom tab bar on mobile for one-thumb navigation. On desktop
+       the bottom bar disappears and a sticky in-content nav takes
+       over.
+       ============================================================ */
+    :root {
+      --bg: #fafafa;
+      --surface: #ffffff;
+      --surface-2: #f4f4f5;
+      --border: #e4e4e7;
+      --fg: #18181b;
+      --fg-dim: #52525b;
+      --fg-mute: #71717a;
+      --accent: #0ea5e9;
+      --accent-soft: #e0f2fe;
+      --ok: #16a34a;
+      --warn: #d97706;
+      --err: #dc2626;
+      --radius: 16px;
+      --tap: 44px;
+      --sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Inter, Roboto, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg); color: var(--fg);
+      font-family: var(--sans); font-size: 14px; line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+    a { color: inherit; text-decoration: none; }
+    code, pre { font-family: var(--mono); }
+    pre { margin: 0; }
+    button { font-family: inherit; }
+
+    /* ---------- Top header ---------- */
+    .app-header {
+      position: sticky; top: 0; z-index: 30;
+      background: rgba(250,250,250,0.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding-top: env(safe-area-inset-top);
+    }
+    .header-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+    }
+    .title { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; flex: 1; }
+    .title .h {
+      font-weight: 700; font-size: 16px; letter-spacing: -0.01em;
+    }
+    .title .acct {
+      font-size: 12px; color: var(--fg-mute); font-family: var(--mono);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+      background: var(--surface-2); color: var(--fg-dim);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pill.running, .bg-emerald-500 { background: #dcfce7; color: var(--ok); border-color: #bbf7d0; }
+    .pill.paused, .bg-amber-500 { background: #fef3c7; color: var(--warn); border-color: #fde68a; }
+    .bg-gray-700 { background: var(--surface-2); color: var(--fg-dim); }
+
+    /* ---------- Top stat strip (always visible on mobile) ---------- */
+    .strip {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 8px; padding: 0 16px 12px;
+    }
+    @media (min-width: 640px) { .strip { grid-template-columns: repeat(4, 1fr); } }
+    .strip .item {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 8px 10px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px;
+    }
+    .strip .k { font-size: 10px; color: var(--fg-mute); text-transform: uppercase; letter-spacing: 0.05em; }
+    .strip .v { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+
+    /* ---------- Desktop sticky nav (hidden on mobile) ---------- */
+    .desk-nav { display: none; }
+
+    /* ---------- Main ---------- */
+    main {
+      padding: 14px 16px;
+      padding-bottom: calc(80px + env(safe-area-inset-bottom));
+      max-width: 960px; margin: 0 auto;
+    }
+
+    /* Section */
+    .section {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 14px; overflow: hidden;
+      scroll-margin-top: 100px;
+    }
+    .section-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px 10px;
+    }
+    .section-head h2 {
+      margin: 0; font-size: 15px; font-weight: 600;
+      letter-spacing: -0.01em; color: var(--fg);
+    }
+    .section-head .tag {
+      font-size: 10.5px; color: var(--fg-mute);
+      padding: 2px 8px; background: var(--surface-2);
+      border-radius: 999px; font-family: var(--mono);
+    }
+    .section-head .spacer { flex: 1; }
+    .section-body {
+      padding: 6px 18px 18px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .section + .section { margin-top: 0; }
+
+    /* Grids */
+    .grid-2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 640px) { .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+    /* Status grid (dl) */
+    #status-grid {
+      display: grid; grid-template-columns: max-content 1fr;
+      gap: 6px 16px; font-size: 13px; margin: 0;
+    }
+    #status-grid dt { color: var(--fg-mute); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    #status-grid dd { margin: 0; color: var(--fg); font-family: var(--mono); word-break: break-word; }
+
+    /* Bars */
+    .bar-row { display: flex; flex-direction: column; gap: 5px; }
+    .bar-row .label {
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: var(--fg-mute);
+    }
+    .bar-track { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 280ms ease; }
+    #energy-bar { background: linear-gradient(90deg, #0ea5e9, #6366f1); }
+    #fuel-bar { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+
+    /* Daily actions */
+    #daily-actions {
+      list-style: none; margin: 0; padding: 0;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    @media (min-width: 640px) { #daily-actions { grid-template-columns: repeat(4, 1fr); } }
+    #daily-actions li {
+      min-height: var(--tap);
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px;
+      background: var(--surface-2); border-radius: 10px;
+      font-size: 13px;
+    }
+
+    /* Forms */
+    label.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--fg-dim); }
+    label.field > span { font-size: 11px; color: var(--fg-mute); text-transform: uppercase; letter-spacing: 0.04em; }
+    label.inline {
+      min-height: var(--tap);
+      display: inline-flex; align-items: center; gap: 10px;
+      font-size: 14px; cursor: pointer; padding: 4px 0;
+    }
+    select, input[type="number"], input[type="text"] {
+      width: 100%; min-height: var(--tap);
+      background: var(--surface); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 12px; font-size: 15px;
+      outline: none; transition: border-color 120ms, box-shadow 120ms;
+      -webkit-appearance: none; appearance: none;
+    }
+    select:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(14,165,233,0.15);
+    }
+    input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+    code {
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 2px 6px; border-radius: 5px; font-size: 12px; color: var(--fg-dim);
+    }
+
+    .subcard {
+      background: var(--surface-2);
+      border-radius: 12px; padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .subcard h3 {
+      margin: 0; font-size: 12px; color: var(--fg-dim);
+      text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+    }
+    .hint { font-size: 12px; color: var(--fg-mute); line-height: 1.5; margin: 0; }
+
+    button.btn {
+      min-height: var(--tap);
+      background: var(--fg); color: white;
+      border: 0; padding: 10px 18px; border-radius: 999px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: opacity 120ms;
+    }
+    button.btn:hover:not(:disabled) { opacity: 0.85; }
+    button.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #history-list {
+      list-style: none; margin: 0; padding: 0;
+      display: flex; flex-direction: column; gap: 4px;
+      max-height: 360px; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #history-list li {
+      padding: 8px 12px; background: var(--surface-2);
+      border-radius: 8px; font-size: 13px; font-family: var(--mono);
+    }
+
+    #logs {
+      background: #18181b; color: #d4d4d8;
+      border-radius: 12px; padding: 12px 14px;
+      font-size: 11.5px; height: 320px; overflow-y: auto;
+      white-space: pre-wrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    #settings-json {
+      background: var(--surface-2);
+      border-radius: 8px; padding: 10px 12px;
+      font-size: 11.5px; overflow-x: auto; color: var(--fg-dim);
+    }
+    details summary {
+      min-height: 32px;
+      cursor: pointer; color: var(--fg-mute);
+      font-size: 12px; padding: 4px 0; user-select: none;
+    }
+
+    .meta { font-size: 11px; color: var(--fg-mute); font-family: var(--mono); white-space: nowrap; }
+
+    .text-gray-500, .text-gray-400 { color: var(--fg-mute) !important; }
+    .text-emerald-600 { color: var(--ok) !important; }
+    .text-red-600 { color: var(--err) !important; }
+
+    /* ---------- Bottom tab bar (mobile only) ---------- */
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+      display: grid; grid-template-columns: repeat(6, 1fr);
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .bottom-nav a {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; min-height: 54px;
+      font-size: 10.5px; color: var(--fg-mute);
+      padding: 6px 4px;
+    }
+    .bottom-nav a:active { background: var(--surface-2); }
+    .bottom-nav svg { width: 20px; height: 20px; }
+
+    /* ============================================================
+       DESKTOP (≥960px): hide bottom bar, show sticky nav inside main
+       ============================================================ */
+    @media (min-width: 960px) {
+      .bottom-nav { display: none; }
+      .desk-nav {
+        display: flex; gap: 6px; flex-wrap: wrap;
+        position: sticky; top: 64px; z-index: 20;
+        padding: 10px 16px;
+        background: rgba(250,250,250,0.92);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+        margin: 0 auto; max-width: 960px;
+      }
+      .desk-nav a {
+        padding: 6px 12px; border-radius: 999px;
+        font-size: 13px; color: var(--fg-dim);
+        background: transparent;
+        border: 1px solid transparent;
+        transition: background 120ms, color 120ms, border-color 120ms;
+      }
+      .desk-nav a:hover {
+        color: var(--fg); background: white;
+        border-color: var(--border);
+      }
+      main { padding: 18px 24px 60px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-row">
+      <div class="title">
+        <span class="h">erepublik-agent</span>
+        <span class="acct" id="header-account">—</span>
+      </div>
+      <span id="status-pill" class="pill bg-gray-700">loading…</span>
+    </div>
+    <div class="strip">
+      <div class="item"><span class="k">Energy</span><span class="v" id="energy-text">—</span></div>
+      <div class="item"><span class="k">Fuel</span><span class="v" id="fuel-text">—</span></div>
+      <div class="item"><span class="k">Last cycle</span><span class="v" id="last-updated">—</span></div>
+      <div class="item"><span class="k">Save</span><span class="v" id="save-indicator">—</span></div>
+    </div>
+  </header>
+
+  <!-- Desktop-only sticky pill nav -->
+  <nav class="desk-nav">
+    <a href="#overview">Overview</a>
+    <a href="#strategy">Strategy</a>
+    <a href="#daily">Daily</a>
+    <a href="#controls">Controls</a>
+    <a href="#history">Activity</a>
+    <a href="#logs-section">Logs</a>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="overview" class="section">
+      <header class="section-head">
+        <h2>Overview</h2>
+        <span class="tag">live</span>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <dl id="status-grid"></dl>
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div class="bar-row">
+              <div class="label"><span>Energy</span><span>pool</span></div>
+              <div class="bar-track"><div id="energy-bar" class="bar-fill" style="width:0%"></div></div>
+            </div>
+            <div class="bar-row">
+              <div class="label"><span>Fuel barrels</span><span>weekly</span></div>
+              <div class="bar-track"><div id="fuel-bar" class="bar-fill" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STRATEGY -->
+    <section id="strategy" class="section">
+      <header class="section-head">
+        <h2>Farm strategy</h2>
+        <span class="tag">writable</span>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <label class="field">
+            <span>Mode</span>
+            <select id="mode-override">
+              <option value="">Auto</option>
+              <option value="standard">Standard (D1-D3 empty-div)</option>
+              <option value="d4tw">D4-TW (native, hit to target)</option>
+              <option value="d4tw-air">D4 TW (air, low-strength medals)</option>
+              <option value="maverickD3">Maverick-D3 (D3 empty-div)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Maverick override</span>
+            <select id="maverick-manual">
+              <option value="">Auto-detect</option>
+              <option value="true">YES</option>
+              <option value="false">NO</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="subcard">
+          <h3>Empty-division · Standard / Maverick-D3</h3>
+          <label class="field">
+            <span>Max battles per session</span>
+            <input id="emptyDiv-maxBattles" type="number" min="1" max="10">
+          </label>
+          <p class="hint">Hard cap on empty-division battles per farm cycle (~10 min). Energy / fuel / weekly-pace limits may lower the effective number. Default <code>3</code>.</p>
+        </div>
+
+        <div class="subcard">
+          <h3>D4-TW · native</h3>
+          <div class="grid-2">
+            <label class="field"><span>Target damage (attacker)</span><input id="d4tw-attacker" type="number" min="1"></label>
+            <label class="field"><span>Target damage (defender)</span><input id="d4tw-defender" type="number" min="1"></label>
+            <label class="field"><span>Max battles per session</span><input id="d4tw-maxBattles" type="number" min="1" max="10"></label>
+            <label class="field"><span>Weapon priority (read-only)</span><code id="d4tw-weapons">—</code></label>
+          </div>
+          <p class="hint">Each TW battle costs 1500–3000 energy — usually only one fits per full pool.</p>
+        </div>
+
+        <div class="subcard">
+          <h3>D4 TW · air</h3>
+          <div class="grid-2">
+            <label class="field"><span>Target damage (attacker)</span><input id="d4twAir-attacker" type="number" min="1" step="1000"></label>
+            <label class="field"><span>Target damage (defender)</span><input id="d4twAir-defender" type="number" min="1" step="1000"></label>
+            <label class="field"><span>Max battles per session</span><input id="d4twAir-maxBattles" type="number" min="1" max="10"></label>
+            <label class="inline"><input id="d4twAir-useWeapon" type="checkbox"> Use aircraft weapon (Q5→Q1)</label>
+            <label class="field"><span>Weapon priority (read-only)</span><code id="d4twAir-weapons">—</code></label>
+            <label class="field"><span>Detected aircraft rank</span><span id="detected-airRank">—</span></label>
+          </div>
+          <p class="hint">Air mode fires low-strength hits to earn air medals in D4 TW battles.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DAILY -->
+    <section id="daily" class="section">
+      <header class="section-head">
+        <h2>Today's actions</h2>
+        <span class="tag">resets 00:00 PST</span>
+      </header>
+      <div class="section-body">
+        <ul id="daily-actions"></ul>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <section id="controls" class="section">
+      <header class="section-head">
+        <h2>Controls</h2>
+        <span class="spacer"></span>
+        <button id="btn-run-now" class="btn" type="button">Run now</button>
+      </header>
+      <div class="section-body">
+        <div class="grid-2">
+          <label class="inline"><input id="toggle-paused" type="checkbox"> Pause bot (skips entire cycle)</label>
+          <label class="inline"><input id="toggle-farmEnabled" type="checkbox"> Farm enabled (skip gate when off)</label>
+        </div>
+        <p class="hint" id="run-now-hint">Wakes the runner immediately if it's sleeping.</p>
+
+        <div class="subcard">
+          <h3>Farm session cooldown</h3>
+          <div class="grid-2">
+            <label class="field"><span>Min minutes between sessions</span><input id="cooldown-min" type="number" min="0"></label>
+            <label class="field"><span>Max minutes between sessions</span><input id="cooldown-max" type="number" min="0"></label>
+          </div>
+          <p class="hint">Random wait time chosen in this range after each session. Defaults: 30–90 minutes.</p>
+        </div>
+
+        <details>
+          <summary>Raw settings JSON</summary>
+          <pre id="settings-json">loading…</pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="history" class="section">
+      <header class="section-head">
+        <h2>Recent activity</h2>
+        <span class="tag">last 20</span>
+      </header>
+      <div class="section-body">
+        <ul id="history-list"></ul>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section id="logs-section" class="section">
+      <header class="section-head">
+        <h2>Live logs</h2>
+        <span class="tag">last 100</span>
+      </header>
+      <div class="section-body">
+        <pre id="logs">—</pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile bottom tab bar -->
+  <nav class="bottom-nav" aria-label="Sections">
+    <a href="#overview" aria-label="Overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span>Overview</span>
+    </a>
+    <a href="#strategy" aria-label="Strategy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88"/></svg>
+      <span>Strategy</span>
+    </a>
+    <a href="#daily" aria-label="Daily">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      <span>Daily</span>
+    </a>
+    <a href="#controls" aria-label="Controls">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Controls</span>
+    </a>
+    <a href="#history" aria-label="Activity">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Activity</span>
+    </a>
+    <a href="#logs-section" aria-label="Logs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span>Logs</span>
+    </a>
+  </nav>
+
+  <script src="/app.js"></script>
+</body>
+</html>
