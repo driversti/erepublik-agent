@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { estimateMinEnergy } from './d4twAir.js';
+import { estimateMinEnergy, type MinEnergyCfg } from './d4twAir.js';
 import type { InventoryWeapon } from './inventory.js';
 
 const cfg = {
   targetDamageAttacker: 30_000,
-  targetDamageDefender: 50_000,
   useWeapon: false,
   weaponPriority: [5, 4, 3, 2, 1] as number[],
-};
+} satisfies MinEnergyCfg;
 
 describe('estimateMinEnergy', () => {
   it('returns MIN_DEPLOY_ENERGY (30) when strength is null', () => {

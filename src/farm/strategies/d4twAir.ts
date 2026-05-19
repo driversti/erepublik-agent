@@ -34,7 +34,6 @@ export function estimateMinEnergy(
     : FIREPOWER.bare;
 
   const dmg = damagePerHit(info.strength, info.airRankNumber, fp);
-  if (dmg <= 0) return MIN_DEPLOY_ENERGY;
 
   const hits = Math.ceil(cfg.targetDamageAttacker / dmg);
   return Math.max(hits * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
