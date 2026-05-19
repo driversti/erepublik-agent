@@ -244,6 +244,22 @@ async function runCycle(
       `, loc=${ctxInfo.currentRegionId ?? '?'}/${ctxInfo.residenceRegionId ?? '?'} (curr/home)`,
   );
 
+  // Mirror current detected state into settings.detected so the UI can show it.
+  // (Schema in settingsStore.ts; runner is the only writer.)
+  settings.detected = {
+    division: ctxInfo.division,
+    hasMaverick: ctxInfo.hasMaverick,
+    airRankNumber: ctxInfo.airRankNumber,
+    citizenId: ctxInfo.citizenId,
+    countryId: ctxInfo.countryId,
+    lastUpdated: new Date().toISOString(),
+  };
+  try {
+    saveSettings(settings);
+  } catch (err) {
+    console.warn(`[cycle] saveSettings(detected) failed: ${(err as Error).message}`);
+  }
+
   // Track time-away-from-home (mirrors ePlus' startTimeAbroad). Update the
   // timer based on observed location every cycle; the return-home trip is
   // triggered later in the idle branch, so we don't waste it before a farm.

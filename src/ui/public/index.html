@@ -37,6 +37,7 @@
             <option value="">Auto</option>
             <option value="standard">Standard (D1-D3 empty-div)</option>
             <option value="d4tw">D4-TW (native, hit to target)</option>
+            <option value="d4tw-air">D4 TW (air, low-strength medals)</option>
             <option value="maverickD3">Maverick-D3 (D3 empty-div)</option>
           </select>
         </label>
@@ -86,6 +87,39 @@
         <p class="text-xs text-amber-800 bg-amber-50 rounded p-2 mt-2">
           ⓘ "Max battles per session" caps how many TW battles the bot fights per cycle (~10 min).
           For TW each battle is one big deploy of 1500–3000 energy — usually only one fits per full pool.
+        </p>
+      </div>
+      <div class="bg-gray-50 rounded p-3 text-sm mt-3">
+        <div class="font-medium mb-2">D4 TW (air) settings</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Target damage (attacker)</span>
+            <input id="d4twAir-attacker" type="number" min="1" step="1000" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Target damage (defender)</span>
+            <input id="d4twAir-defender" type="number" min="1" step="1000" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Max battles per session</span>
+            <input id="d4twAir-maxBattles" type="number" min="1" max="10" class="border rounded px-2 py-1">
+          </label>
+          <label class="flex items-center gap-2">
+            <input id="d4twAir-useWeapon" type="checkbox">
+            <span>Use aircraft weapon (Q5→Q1 priority)</span>
+          </label>
+          <div class="flex flex-col text-xs text-gray-500">
+            <span>Weapon priority (edit JSON to change)</span>
+            <code id="d4twAir-weapons" class="bg-white border rounded px-2 py-1">—</code>
+          </div>
+          <div class="flex flex-col text-xs text-gray-500">
+            <span>Detected aircraft rank</span>
+            <span id="detected-airRank" class="bg-white border rounded px-2 py-1">—</span>
+          </div>
+        </div>
+        <p class="text-xs text-amber-800 bg-amber-50 rounded p-2 mt-2">
+          ⓘ Air mode fires low-strength hits to earn air division medals in D4 TW battles.
+          "Use aircraft weapon" equips the best available aircraft weapon (Q5→Q1).
         </p>
       </div>
     </section>

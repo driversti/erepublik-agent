@@ -184,6 +184,38 @@ function bindControls() {
   if (def) def.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.targetDamageDefender = Number(e.target.value))));
   const maxB = document.getElementById('d4tw-maxBattles');
   if (maxB) maxB.addEventListener('change', (e) => scheduleSave((s) => (s.d4tw.maxBattlesPerSession = Number(e.target.value))));
+  const aAtt = document.getElementById('d4twAir-attacker');
+  if (aAtt)
+    aAtt.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.d4twAir = s.d4twAir || {};
+        s.d4twAir.targetDamageAttacker = Number(e.target.value);
+      }),
+    );
+  const aDef = document.getElementById('d4twAir-defender');
+  if (aDef)
+    aDef.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.d4twAir = s.d4twAir || {};
+        s.d4twAir.targetDamageDefender = Number(e.target.value);
+      }),
+    );
+  const aMaxB = document.getElementById('d4twAir-maxBattles');
+  if (aMaxB)
+    aMaxB.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.d4twAir = s.d4twAir || {};
+        s.d4twAir.maxBattlesPerSession = Number(e.target.value);
+      }),
+    );
+  const aUseW = document.getElementById('d4twAir-useWeapon');
+  if (aUseW)
+    aUseW.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.d4twAir = s.d4twAir || {};
+        s.d4twAir.useWeapon = !!e.target.checked;
+      }),
+    );
   const edMaxB = document.getElementById('emptyDiv-maxBattles');
   if (edMaxB)
     edMaxB.addEventListener('change', (e) =>
@@ -249,6 +281,22 @@ function renderSettingsForm(s) {
     edMaxB.value = String(s.emptyDiv?.maxBattlesPerSession ?? 3);
   const weapons = document.getElementById('d4tw-weapons');
   if (weapons) weapons.textContent = JSON.stringify(s.d4tw.weaponPriority);
+  const aAttE = document.getElementById('d4twAir-attacker');
+  if (aAttE && document.activeElement !== aAttE)
+    aAttE.value = String(s.d4twAir?.targetDamageAttacker ?? 30000);
+  const aDefE = document.getElementById('d4twAir-defender');
+  if (aDefE && document.activeElement !== aDefE)
+    aDefE.value = String(s.d4twAir?.targetDamageDefender ?? 50000);
+  const aMaxBE = document.getElementById('d4twAir-maxBattles');
+  if (aMaxBE && document.activeElement !== aMaxBE)
+    aMaxBE.value = String(s.d4twAir?.maxBattlesPerSession ?? 1);
+  const aUseWE = document.getElementById('d4twAir-useWeapon');
+  if (aUseWE && document.activeElement !== aUseWE)
+    aUseWE.checked = !!s.d4twAir?.useWeapon;
+  const aWeapons = document.getElementById('d4twAir-weapons');
+  if (aWeapons) aWeapons.textContent = JSON.stringify(s.d4twAir?.weaponPriority ?? [5, 4, 3, 2, 1]);
+  const airRank = document.getElementById('detected-airRank');
+  if (airRank) airRank.textContent = s.detected?.airRankNumber != null ? String(s.detected.airRankNumber) : '—';
   const cdMin = document.getElementById('cooldown-min');
   if (cdMin && document.activeElement !== cdMin) cdMin.value = String(s.farmSession?.cooldownMinMinutes ?? 30);
   const cdMax = document.getElementById('cooldown-max');
