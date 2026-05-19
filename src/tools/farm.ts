@@ -1,5 +1,11 @@
 import type { BrowserContext } from 'playwright-core';
 import { apiCall } from '../transport/apiCall.js';
+import {
+  parseDeployInventory,
+  parseDeployResponse,
+  type RawDeployInventory,
+  type RawDeployResponse,
+} from './farmSchemas.js';
 
 // --- Public types ------------------------------------------------------------
 
@@ -51,27 +57,10 @@ export interface TravelResult {
 }
 
 // --- Raw API shapes (only the parts we care about) --------------------------
-
-interface RawWeapon {
-  quality: number;
-  amount: number | null;
-  /** Server-computed damage per hit for this weapon. Note JSON key is
-   *  `damageperHit` (lowercase second `p` — eRepublik camelCase quirk). */
-  damageperHit?: number;
-}
-
-interface RawVehicle {
-  id: number;
-  isActive: boolean;
-}
-
-interface RawDeployInventory {
-  weapons?: RawWeapon[];
-  vehicles?: RawVehicle[];
-  poolEnergy?: number;
-  /** Server-reported minimum energy per hit (typically 10). */
-  minEnergy?: number;
-}
+// RawDeployInventory and RawDeployResponse moved to `./farmSchemas.ts` so they
+// have a runtime Zod schema. We trust eRepublik even less than we did before:
+// any breaking change in those payloads now throws a clear
+// "eRepublik API format changed" error instead of a downstream TypeError.
 
 interface RawTravelDataRegion {
   id: number;
@@ -82,15 +71,6 @@ interface RawTravelDataRegion {
 interface RawTravelData {
   countries?: Record<string, { regions?: number[] }>;
   regions?: Record<string, RawTravelDataRegion>;
-}
-
-interface RawDeployResponse {
-  error: boolean;
-  message?: string;
-  deploymentId?: number;
-  data?: {
-    fuelLeft?: number;
-  };
 }
 
 interface RawTravelResponse {
@@ -118,7 +98,7 @@ export async function getDeployInventory(
   sideCountryId: number,
   battleZoneId: number,
 ): Promise<DeployInventory> {
-  const { body } = await apiCall<RawDeployInventory>(ctx, {
+  const { body } = await apiCall<unknown>(ctx, {
     method: 'POST',
     path: '/en/military/fightDeploy-getInventory',
     csrf,
@@ -130,8 +110,9 @@ export async function getDeployInventory(
     },
   });
 
-  const activeVehicle = body.vehicles?.find((v) => v.isActive);
-  const weapons = body.weapons ?? [];
+  const parsed: RawDeployInventory = parseDeployInventory(body);
+  const activeVehicle = parsed.vehicles?.find((v) => v.isActive);
+  const weapons = parsed.weapons ?? [];
   const hasNoWeaponOption = weapons.some((w) => w.quality === -1);
 
   const damagePerHitByQuality: Record<number, number> = {};
@@ -143,9 +124,9 @@ export async function getDeployInventory(
 
   return {
     skinId: activeVehicle?.id ?? null,
-    poolEnergy: typeof body.poolEnergy === 'number' ? body.poolEnergy : 0,
+    poolEnergy: typeof parsed.poolEnergy === 'number' ? parsed.poolEnergy : 0,
     hasNoWeaponOption,
-    minEnergy: typeof body.minEnergy === 'number' ? body.minEnergy : 10,
+    minEnergy: typeof parsed.minEnergy === 'number' ? parsed.minEnergy : 10,
     damagePerHitByQuality,
   };
 }
@@ -248,7 +229,7 @@ export async function deployWeapon(
   totalEnergy: number,
   skinId: number,
 ): Promise<DeployResult> {
-  const { body } = await apiCall<RawDeployResponse>(ctx, {
+  const { body } = await apiCall<unknown>(ctx, {
     method: 'POST',
     path: '/en/military/fightDeploy-startDeploy',
     csrf,
@@ -264,11 +245,12 @@ export async function deployWeapon(
       'energySources[0][amount]': 0,
     },
   });
+  const parsed: RawDeployResponse = parseDeployResponse(body);
   return {
-    success: body.error === false,
-    fuelLeft: typeof body.data?.fuelLeft === 'number' ? body.data.fuelLeft : null,
-    message: body.message ?? '',
-    deploymentId: typeof body.deploymentId === 'number' ? body.deploymentId : null,
+    success: parsed.error === false,
+    fuelLeft: typeof parsed.data?.fuelLeft === 'number' ? parsed.data.fuelLeft : null,
+    message: parsed.message ?? '',
+    deploymentId: typeof parsed.deploymentId === 'number' ? parsed.deploymentId : null,
   };
 }
 
