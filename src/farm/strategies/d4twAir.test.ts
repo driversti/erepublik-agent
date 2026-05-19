@@ -110,4 +110,14 @@ describe('orderByPreferredSide', () => {
   it('returns empty list when no battles', () => {
     expect(orderByPreferredSide([], nativeCountryId)).toEqual([]);
   });
+
+  it('drops battles where neither side is the native country', () => {
+    const battles = [
+      make(1, nativeCountryId, 99),  // invader=native — keep
+      make(2, 88, 77),               // neither side native — drop
+      make(3, 99, nativeCountryId),  // defender=native — keep
+    ];
+    const out = orderByPreferredSide(battles, nativeCountryId).map((b) => b.battleId);
+    expect(out).toEqual([1, 3]);
+  });
 });
