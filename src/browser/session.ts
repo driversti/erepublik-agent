@@ -214,6 +214,7 @@ export async function extractCitizenContext(
 
   let strength: number | null = null;
   let rankNumber: number | null = null;
+  let airRankNumber: number | null = null;
   let hasMaverick: boolean | null = null;
   const citizenId = info.citizenId ?? null;
   if (citizenId != null) {
@@ -227,6 +228,13 @@ export async function extractCitizenContext(
       const milData = (p?.military as Record<string, unknown>)?.militaryData as Record<string, unknown> | undefined;
       strength = typeof milData?.strength === 'number' ? milData.strength : null;
       rankNumber = typeof milData?.rankNumber === 'number' ? milData.rankNumber : null;
+      // TODO(verify): the exact JSON key in citizen-profile-json-personal/{id}
+      // is unconfirmed from a live response. Candidates: `airRankNumber`,
+      // `air_rank_number`, or nested under another object. Operator must
+      // verify against a real response and adjust if needed (see plan §0a).
+      airRankNumber = typeof milData?.airRankNumber === 'number'
+        ? milData.airRankNumber
+        : null;
       const activePacks = p?.activePacks;
       hasMaverick = activePacks != null && typeof activePacks === 'object'
         ? 'division_switch_pack' in activePacks
@@ -258,7 +266,7 @@ export async function extractCitizenContext(
     maxFuel: info.maxFuel ?? null,
     strength,
     rankNumber,
-    airRankNumber: null,   // populated in Task 4
+    airRankNumber,
     hasMaverick,
   };
 }
