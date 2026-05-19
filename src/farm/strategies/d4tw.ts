@@ -20,7 +20,6 @@ import {
 } from '../../util/battleNotification.js';
 
 const ENERGY_PER_HIT = 10;
-const MIN_DEPLOY_ENERGY = 30; // game minimum for normal weapon / bare hands
 
 function emptyResult(reason: string, stopReason: StopReason): FarmSessionResult {
   return {
@@ -158,7 +157,7 @@ async function runD4TW(
     const effectiveDmgPerHit = serverDmg ?? dmgPerHitFallback;
     const energyPerHit = inv.minEnergy || ENERGY_PER_HIT;
     const hitsNeeded = Math.ceil(targetDmg / effectiveDmgPerHit);
-    const energyToSpend = Math.max(hitsNeeded * energyPerHit, MIN_DEPLOY_ENERGY);
+    const energyToSpend = Math.max(hitsNeeded * energyPerHit, cfg.minDeployEnergy);
 
     const ammoOk = weapon.amountOnHand === Infinity || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {

@@ -123,7 +123,13 @@ function snapshotHash(state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelSt
   return createHash('sha256').update(data).digest('hex').slice(0, 12);
 }
 
-function formatDigest(day: number, state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
+function formatDigest(
+  day: number,
+  state: DailyState,
+  weekly: WeeklyState,
+  fuel: WeeklyFuelState,
+  weeklyFuelBudget: number,
+): string {
   const a = state.completedActions;
   const flag = (v: unknown) => (v ? '✅' : '⏳');
   return [
@@ -132,7 +138,7 @@ function formatDigest(day: number, state: DailyState, weekly: WeeklyState, fuel:
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
-    `Fuel week ${fuel.week}: spent ${fuel.spent}/70, hits ${fuel.hitsLanded}, skipped ${fuel.cyclesSkipped}`,
+    `Fuel week ${fuel.week}: spent ${fuel.spent}/${weeklyFuelBudget}, hits ${fuel.hitsLanded}, skipped ${fuel.cyclesSkipped}`,
   ].join('\n');
 }
 
@@ -515,7 +521,8 @@ async function runCycle(
           poolEnergy: ctxInfo.energy ?? 0,
           fuelInInventory: fuelAtCycleStart,
           maxBattlesPerSession: maxBattlesForGate,
-          minEnergyPerBattle,
+          minEnergyPerBattle: minEnergyPerBattle ?? settings.energyPerBattleStandard,
+          weeklyBudget: settings.weeklyFuelBudget,
         })
       : {
           shouldFarm: false as const,
@@ -530,7 +537,7 @@ async function runCycle(
           },
         };
     lastDecisionReason = decision.reason;
-    lastWeekFuelTarget = Math.floor(70 * decision.diagnostics.weekFraction);
+    lastWeekFuelTarget = decision.diagnostics.target;
     console.log(
       `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
         `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
@@ -590,7 +597,7 @@ async function runCycle(
         console.log(
           `[cycle] farm session: stop=${result.stopReason}, wins=${result.wins.length}, ` +
             `consumed=${consumed} fuel (${fuelAtCycleStart}→${fuelAfter}), hits=${verifiedHits}, ` +
-            `weekly=${fuel.spent}/70`,
+            `weekly=${fuel.spent}/${settings.weeklyFuelBudget}`,
         );
       } catch (err) {
         const msg = `[cycle] farm session threw: ${(err as Error).message}`;
@@ -691,7 +698,7 @@ async function runCycle(
 
   const hash = snapshotHash(state, weekly, fuel);
   if (hash !== state.lastDigestHash) {
-    const digest = formatDigest(day, state, weekly, fuel);
+    const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget);
     console.log('[cycle] digest:\n' + digest);
     await notifier.send(digest);
     state.lastDigestHash = hash;

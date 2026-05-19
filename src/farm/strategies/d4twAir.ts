@@ -20,7 +20,9 @@ import {
 } from '../../util/battleNotification.js';
 
 export const ENERGY_PER_HIT = 10;
-export const MIN_DEPLOY_ENERGY = 30;
+/** Game-default minimum energy floor for a deploy. Operators may override via
+ *  `settings.d4twAir.minDeployEnergy` (and the matching D4TW field). */
+export const DEFAULT_MIN_DEPLOY_ENERGY = 30;
 export const AIR_WEAPON_TYPE = 'airWeapon'; // verified against live /economy/inventory-json (Q1-Q5 air-to-air missiles)
 export const AIR_DIVISION = 11;
 
@@ -33,6 +35,8 @@ export interface MinEnergyCfg {
   targetDamageAttacker: number;
   useWeapon: boolean;
   weaponPriority: readonly number[];
+  /** Optional override of {@link DEFAULT_MIN_DEPLOY_ENERGY}. */
+  minDeployEnergy?: number;
 }
 
 /**
@@ -46,7 +50,8 @@ export function estimateMinEnergy(
   cfg: MinEnergyCfg,
   inventory: readonly InventoryWeapon[],
 ): number {
-  if (info.strength == null || info.airRankNumber == null) return MIN_DEPLOY_ENERGY;
+  const floor = cfg.minDeployEnergy ?? DEFAULT_MIN_DEPLOY_ENERGY;
+  if (info.strength == null || info.airRankNumber == null) return floor;
 
   const fp = cfg.useWeapon
     ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE).firepower
@@ -55,7 +60,7 @@ export function estimateMinEnergy(
   const dmg = damagePerHit(info.strength, info.airRankNumber, fp);
 
   const hits = Math.ceil(cfg.targetDamageAttacker / dmg);
-  return Math.max(hits * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
+  return Math.max(hits * ENERGY_PER_HIT, floor);
 }
 
 /**
@@ -205,7 +210,8 @@ async function runD4twAir(
     const effectiveDmgPerHit = serverDmg ?? dmgPerHitFallback;
     const energyPerHit = inv.minEnergy || ENERGY_PER_HIT;
     const hitsNeeded = Math.ceil(targetDmg / effectiveDmgPerHit);
-    const energyToSpend = Math.max(hitsNeeded * energyPerHit, MIN_DEPLOY_ENERGY);
+    const energyFloor = cfg.minDeployEnergy ?? DEFAULT_MIN_DEPLOY_ENERGY;
+    const energyToSpend = Math.max(hitsNeeded * energyPerHit, energyFloor);
 
     const ammoOk = weapon.amountOnHand === Number.POSITIVE_INFINITY || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {
