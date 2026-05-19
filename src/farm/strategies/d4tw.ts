@@ -74,10 +74,16 @@ async function runD4TW(
   // ── Weapon selection (one inventory read per session) ───────────────────────
   const inventory = await loadInventory(ctx, info.csrf);
   const weapon = resolveWeapon(inventory, cfg.weaponPriority);
-  const dmgPerHit = damagePerHit(info.strength, info.rankNumber, weapon.firepower);
+  // Formula-based damage estimate — used only for startup logging AND as a
+  // graceful fallback when the server response is missing this weapon quality.
+  // The authoritative per-hit damage comes from getDeployInventory below
+  // (server includes NE bonus, terrain, booster effects — none of which the
+  // local formula models). Strictly better than the formula even for ground.
+  const dmgPerHitFallback = damagePerHit(info.strength, info.rankNumber, weapon.firepower);
   console.log(
     `[d4tw] weapon=Q${weapon.quality === -1 ? 'bare' : weapon.quality} ` +
-      `fp=${weapon.firepower} dmg/hit=${Math.floor(dmgPerHit)} ammo=${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand}`,
+      `fp=${weapon.firepower} dmg/hit≈${Math.floor(dmgPerHitFallback)} (formula estimate) ` +
+      `ammo=${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand}`,
   );
 
   // ── Battle loop ─────────────────────────────────────────────────────────────
@@ -124,10 +130,6 @@ async function runD4TW(
       continue;
     }
 
-    // Energy + ammo pre-check
-    const hitsNeeded = Math.ceil(targetDmg / dmgPerHit);
-    const energyToSpend = Math.max(hitsNeeded * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
-
     // Battlefield page navigation is REQUIRED before any deploy fetch — the
     // deploy endpoints check the browser-enforced Referer header, which only
     // gets set correctly when the page actually navigated there. Skipping
@@ -138,7 +140,7 @@ async function runD4TW(
       waitUntil: 'domcontentloaded',
     });
 
-    // Get fresh pool energy + skin
+    // Get fresh pool energy + skin + authoritative damage/min-energy
     const inv = await getDeployInventory(
       ctx,
       info.csrf,
@@ -148,6 +150,15 @@ async function runD4TW(
     );
     const poolEnergy = inv.poolEnergy ?? 0;
     lastPoolEnergy = poolEnergy;
+
+    // Prefer server-reported damage (true source of truth — includes NE
+    // bonus, terrain, boosters). Fall back to the formula estimate only when
+    // the requested quality isn't in the response.
+    const serverDmg = inv.damagePerHitByQuality[weapon.quality];
+    const effectiveDmgPerHit = serverDmg ?? dmgPerHitFallback;
+    const energyPerHit = inv.minEnergy || ENERGY_PER_HIT;
+    const hitsNeeded = Math.ceil(targetDmg / effectiveDmgPerHit);
+    const energyToSpend = Math.max(hitsNeeded * energyPerHit, MIN_DEPLOY_ENERGY);
 
     const ammoOk = weapon.amountOnHand === Infinity || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {
@@ -177,7 +188,8 @@ async function runD4TW(
     // One big deploy
     console.log(
       `[d4tw] 🎯 #${battle.battleId} ${battle.regionName} (${mySide}) ` +
-        `target=${(targetDmg / 1e6).toFixed(0)}M hits=${hitsNeeded} energy=${energyToSpend}`,
+        `target=${(targetDmg / 1e6).toFixed(0)}M hits=${hitsNeeded} energy=${energyToSpend} ` +
+        `dmg/hit=${Math.floor(effectiveDmgPerHit)}${serverDmg != null ? ' (server)' : ' (formula)'}`,
     );
 
     if (options.dryRun) {

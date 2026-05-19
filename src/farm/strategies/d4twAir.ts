@@ -127,10 +127,16 @@ async function runD4twAir(
     ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE)
     : { quality: -1, firepower: FIREPOWER.bare, amountOnHand: Number.POSITIVE_INFINITY };
 
-  const dmgPerHit = damagePerHit(info.strength, info.airRankNumber, weapon.firepower);
+  // Formula-based damage estimate — used only for startup logging AND as a
+  // graceful fallback when the server response is missing this weapon quality.
+  // The authoritative per-hit damage comes from getDeployInventory below
+  // (server includes air-specific scaling, natural-enemy bonus, terrain,
+  // booster effects — none of which the local formula models).
+  const dmgPerHitFallback = damagePerHit(info.strength, info.airRankNumber, weapon.firepower);
   console.log(
     `[d4tw-air] weapon=${weapon.quality === -1 ? 'bare' : `Q${weapon.quality}`} ` +
-      `fp=${weapon.firepower} dmg/hit=${Math.floor(dmgPerHit)} ammo=${weapon.amountOnHand === Number.POSITIVE_INFINITY ? '∞' : weapon.amountOnHand}`,
+      `fp=${weapon.firepower} dmg/hit≈${Math.floor(dmgPerHitFallback)} (formula estimate) ` +
+      `ammo=${weapon.amountOnHand === Number.POSITIVE_INFINITY ? '∞' : weapon.amountOnHand}`,
   );
 
   // ── Battle loop ─────────────────────────────────────────────────────────
@@ -176,10 +182,6 @@ async function runD4twAir(
       continue;
     }
 
-    // Energy + ammo recompute with the real side
-    const hitsNeeded = Math.ceil(targetDmg / dmgPerHit);
-    const energyToSpend = Math.max(hitsNeeded * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
-
     // Battlefield page navigation is REQUIRED before deploy fetch — see d4tw.ts comment.
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     await page.goto(`https://www.erepublik.com/en/military/battlefield/${battle.battleId}`, {
@@ -195,6 +197,15 @@ async function runD4twAir(
     );
     const poolEnergy = inv.poolEnergy ?? 0;
     lastPoolEnergy = poolEnergy;
+
+    // Prefer server-reported damage (true source of truth — includes
+    // air-specific scaling, NE bonus, boosters, terrain). Fall back to the
+    // formula estimate only when the requested quality isn't in the response.
+    const serverDmg = inv.damagePerHitByQuality[weapon.quality];
+    const effectiveDmgPerHit = serverDmg ?? dmgPerHitFallback;
+    const energyPerHit = inv.minEnergy || ENERGY_PER_HIT;
+    const hitsNeeded = Math.ceil(targetDmg / effectiveDmgPerHit);
+    const energyToSpend = Math.max(hitsNeeded * energyPerHit, MIN_DEPLOY_ENERGY);
 
     const ammoOk = weapon.amountOnHand === Number.POSITIVE_INFINITY || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {
@@ -223,7 +234,8 @@ async function runD4twAir(
 
     console.log(
       `[d4tw-air] 🎯 #${battle.battleId} ${battle.regionName} (${mySide}) ` +
-        `target=${targetDmg} hits=${hitsNeeded} energy=${energyToSpend}`,
+        `target=${targetDmg} hits=${hitsNeeded} energy=${energyToSpend} ` +
+        `dmg/hit=${Math.floor(effectiveDmgPerHit)}${serverDmg != null ? ' (server)' : ' (formula)'}`,
     );
 
     const sideCountryId = mySide === 'invader' ? battle.invaderId : battle.defenderId;
