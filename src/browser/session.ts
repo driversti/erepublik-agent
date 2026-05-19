@@ -228,12 +228,13 @@ export async function extractCitizenContext(
       const milData = (p?.military as Record<string, unknown>)?.militaryData as Record<string, unknown> | undefined;
       strength = typeof milData?.strength === 'number' ? milData.strength : null;
       rankNumber = typeof milData?.rankNumber === 'number' ? milData.rankNumber : null;
-      // TODO(verify): the exact JSON key in citizen-profile-json-personal/{id}
-      // is unconfirmed from a live response. Candidates: `airRankNumber`,
-      // `air_rank_number`, or nested under another object. Operator must
-      // verify against a real response and adjust if needed (see plan §0a).
-      airRankNumber = typeof milData?.airRankNumber === 'number'
-        ? milData.airRankNumber
+      // Aircraft rank is nested inside `militaryData.aircraft` (verified
+      // against a live /main/citizen-profile-json-personal/{id} response on
+      // 2026-05-19). Ground `rankNumber` lives directly on militaryData; the
+      // aircraft object mirrors that field name one level deeper.
+      const aircraft = milData?.aircraft as Record<string, unknown> | undefined;
+      airRankNumber = typeof aircraft?.rankNumber === 'number'
+        ? aircraft.rankNumber
         : null;
       const activePacks = p?.activePacks;
       hasMaverick = activePacks != null && typeof activePacks === 'object'
