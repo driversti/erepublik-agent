@@ -15,7 +15,7 @@ export interface InventoryWeapon {
 export function pickWeapon(
   inventory: readonly InventoryWeapon[],
   priorityList: readonly number[],
-  weaponType: string = 'groundWeapon',
+  weaponType: 'groundWeapon' | 'aircraftWeapon' | 'groundBomb' = 'groundWeapon',
 ): { quality: number; amount: number } | null {
   for (const q of priorityList) {
     const match = inventory.find(

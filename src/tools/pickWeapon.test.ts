@@ -62,4 +62,13 @@ describe('pickWeapon weaponType parameter', () => {
     const groundOnly = [{ type: 'groundWeapon', quality: 7, amount: 100 }];
     expect(pickWeapon(groundOnly, [5, 4, 3], 'aircraftWeapon')).toBeNull();
   });
+
+  it('ignores groundWeapon items when aircraftWeapon is requested', () => {
+    const mixed = [
+      { type: 'groundWeapon', quality: 5, amount: 99 },
+      { type: 'aircraftWeapon', quality: 3, amount: 10 },
+    ];
+    expect(pickWeapon(mixed, [5, 4, 3, 2, 1], 'aircraftWeapon'))
+      .toEqual({ quality: 3, amount: 10 });
+  });
 });
