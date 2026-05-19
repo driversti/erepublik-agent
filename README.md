@@ -57,6 +57,298 @@ For a second account: set a different `ERP_ACCOUNT_SLUG`, re-run `bootstrap`, th
 
 ---
 
+## Configuration
+
+The bot reads its settings from **two separate files**. They serve different purposes:
+
+| File | Where it lives | Edit when | Hot-reload? | What goes here |
+|---|---|---|---|---|
+| `.env` | Project root | Once, before first run | No — restart bot after changes | Login credentials, optional services (Telegram, captcha), one-time defaults |
+| `config/settings.json` | `config/` folder | Any time | **Yes** — bot picks up changes within seconds | Live behavior: pause, strategy choice, damage targets, cooldown |
+
+**Rule of thumb:** put secrets and one-time setup into `.env`. Put everything you might want to change while the bot is running into `config/settings.json`.
+
+You don't have to edit `config/settings.json` by hand if you don't want to — once the bot is running, open the dashboard at **http://localhost:3737** and use the UI form. It writes the file for you.
+
+---
+
+### 1. `.env` — credentials and one-time setup
+
+Stored at the project root. To create it: `cp .env.example .env`, then open it in any text editor and fill in the values.
+
+**Important:** changes here take effect only on the next bot restart. If you want a setting you can change without restarting, set it in `config/settings.json` instead (most behavior knobs live there).
+
+#### Required fields
+
+| Variable | Example | What it does |
+|---|---|---|
+| `ERP_LOGIN` | `me@example.com` | Your eRepublik account email. Read **only** during `npm run bootstrap` — never sent anywhere except eRepublik's login form. |
+| `ERP_PASSWORD` | `s3cret!` | Same. After bootstrap, the login session is stored in `sessions/profile/<slug>/`; the password is never read again. |
+| `ERP_MAX_FOOD_PRICE` | `3.0` | Hard ceiling on Q1 food unit price. Bot refuses to buy above this. Typical Q1 prices are 0.5–2.0, so 3.0 is a safe margin. |
+
+#### Multiple accounts
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ERP_ACCOUNT_SLUG` | `main` | Folder name under `sessions/profile/`. To run a second account, set a different slug (e.g. `alt`), re-run `npm run bootstrap`, and that profile is reused on subsequent runs. |
+
+#### Telegram notifications (optional)
+
+| Variable | What it does |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) on Telegram. Skip both fields if you don't want notifications — the bot still logs everything to the terminal. |
+| `TELEGRAM_CHAT_ID` | Your personal chat ID (or a group ID). Get it from [@userinfobot](https://t.me/userinfobot). |
+
+You'll get a digest after every cycle (only when something changed), plus per-battle messages when farming fires.
+
+#### Captcha solver (optional)
+
+When eRepublik shows its "click the lock" verification challenge, the bot can either alert you and skip the cycle, or pay a service to solve it automatically.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ERP_CAPTCHA_PROVIDER` | `none` | `none` = detect, alert via Telegram, skip cycle. `2captcha` = auto-solve via api.2captcha.com (~$0.001 per solve). |
+| `ERP_CAPTCHA_API_KEY` | (empty) | Required when `ERP_CAPTCHA_PROVIDER=2captcha`. Get it from the 2captcha dashboard. |
+| `ERP_CAPTCHA_MAX_ATTEMPTS` | `10` | Retries before giving up on a challenge. |
+
+#### Visibility & timing
+
+| Variable | Default | What it does |
+|---|---|---|
+| `HEADED` | `false` | `true` opens a visible Chromium window so you can watch what the bot is doing. Useful when something looks wrong. |
+| `LOOP_INTERVAL_MS` | `600000` | How long the bot sleeps between cycles, in milliseconds. `600000` = 10 minutes. Shorter = more checks but more load. |
+
+#### Auto return-home
+
+When farming sends the bot abroad, these control when it travels back to your residence.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ERP_RETURN_HOME_AFTER_MINUTES` | `15` | Travel back after this many minutes abroad (only on idle cycles, so a farm trip isn't immediately undone). `0` disables. |
+| `ERP_RETURN_HOME_MAX_CC` | `500` | Maximum local currency to spend on returning home. Pricier trips are skipped, with a Telegram alert. |
+
+#### Country detection fallback
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ERP_COUNTRY_ID` | (auto) | Bot normally auto-detects your country. Set this only if detection fails for some reason. |
+
+#### First-run-only seeds
+
+These are read **once** to populate `config/settings.json` on the very first run. After that, edit `config/settings.json` (or use the dashboard) — changing them in `.env` later does nothing.
+
+| Variable | Default | Seeds this field in settings.json |
+|---|---|---|
+| `ERP_SESSION_COOLDOWN_MIN_MIN` | `30` | `farmSession.cooldownMinMinutes` |
+| `ERP_SESSION_COOLDOWN_MAX_MIN` | `90` | `farmSession.cooldownMaxMinutes` |
+| `ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION` | `3` | `emptyDiv.maxBattlesPerSession` |
+| `ERP_D4TW_MAX_BATTLES_PER_SESSION` | `1` | `d4tw.maxBattlesPerSession` |
+| `ERP_FARM_MAX_TRAVEL_CC` | `100` | `travel.maxTravelCC` |
+
+---
+
+### 2. `config/settings.json` — live behavior config
+
+This file is **created automatically** on the bot's first run, with sensible defaults. After that you can edit it whenever — the bot watches the file and applies changes within seconds, no restart needed.
+
+Three ways to edit it:
+1. **Easiest** — open the dashboard at http://localhost:3737 (once `npm start` is running), use the form, click Save.
+2. **Direct edit** — open `config/settings.json` in any text editor, save the file.
+3. **HTTP API** — `PUT /api/settings` with the new JSON (used by the dashboard internally).
+
+All three are equivalent. The file write is atomic (tempfile + rename), so you'll never end up with a half-written settings file.
+
+#### Top-level switches
+
+```json
+{
+  "paused": false,
+  "farmEnabled": true,
+  "modeOverride": null,
+  "maverickManual": null
+}
+```
+
+| Field | Values | What it does |
+|---|---|---|
+| `paused` | `true` / `false` | When `true`, the bot does **nothing** — no clicks, no API calls, no battles. Use this if you want to log into the game manually without the bot getting in the way. |
+| `farmEnabled` | `true` / `false` | When `false`, the bot still does daily chores (work, train, claim rewards) but skips the medal-farming step. |
+| `modeOverride` | `null`, `"standard"`, `"d4tw"`, `"d4tw-air"`, `"maverickD3"` | Force a specific farming strategy. `null` (default) = auto-detect based on your division. See "Strategies" below. |
+| `maverickManual` | `true` / `false` / `null` | Override the Maverick-pack auto-detection. Leave `null` to let the bot decide. |
+
+#### Strategies
+
+The bot has four farming strategies. Each has its own block in `settings.json`. Only the **active** strategy's block matters — others are ignored.
+
+**Which one is active?** If `modeOverride` is set, that one. Otherwise the bot picks automatically:
+- D1, D2, D3 → `standard` (empty-division farming)
+- D4 with Maverick Pack → `maverickD3` (use Maverick switch + bombs)
+- D4 without Maverick → `d4tw` (ground D4 TW, high damage targets)
+
+To use the new air strategy on a D4 account, set `"modeOverride": "d4tw-air"` (auto-mode won't pick it).
+
+**`d4tw-air` — Air medals for low-strength D4 accounts**
+
+```json
+"d4twAir": {
+  "targetDamageAttacker": 30000,
+  "targetDamageDefender": 50000,
+  "maxBattlesPerSession": 1,
+  "useWeapon": false,
+  "weaponPriority": [5, 4, 3, 2, 1]
+}
+```
+
+| Field | What it does |
+|---|---|
+| `targetDamageAttacker` | Damage to land when your country is the **attacker** in the battle. Air Battle Hero medals are awarded for top damage per round; on the losing (attacker) side, 30k is usually enough. |
+| `targetDamageDefender` | Same for **defender** side. Defender medals are more contested, so the threshold is higher. |
+| `maxBattlesPerSession` | How many medals to chase per farm session. Default `1` — air medals are cheap (~30 energy each). |
+| `useWeapon` | `false` = fight bare-handed (no ammo consumed). `true` = use aircraft weapons Q5→Q1, fall back to bare hands if none available. |
+| `weaponPriority` | Order of weapon qualities to try when `useWeapon=true`. Q5 first, then Q4, etc. Aircraft weapons only exist at Q1–Q5. |
+
+**`d4tw` — Ground medals for high-strength D4 accounts**
+
+```json
+"d4tw": {
+  "targetDamageAttacker": 130000000,
+  "targetDamageDefender": 220000000,
+  "maxBattlesPerSession": 1,
+  "weaponPriority": [7, 6, 5, 4, 3, 2, 1]
+}
+```
+
+Same idea as `d4twAir` but for ground D4. Damage targets are much higher (130M attacker, 220M defender) because ground D4 medals are contested by strong players. Don't use this strategy if your strength is below ~500k.
+
+**`emptyDiv` — Empty-division farming for D1, D2, D3 accounts**
+
+```json
+"emptyDiv": {
+  "maxBattlesPerSession": 3,
+  "nativeWeaponPriority": [7, 6, 5, 4, 3, 2, 1],
+  "foreignWeaponPolicy": "bomb-then-bazooka"
+}
+```
+
+| Field | What it does |
+|---|---|
+| `maxBattlesPerSession` | Battles to chase per session. Each medal costs ~66 energy (both sides × 33 each). |
+| `nativeWeaponPriority` | Weapon qualities to try when fighting in your native country. |
+| `foreignWeaponPolicy` | When fighting abroad: `"bomb-then-bazooka"` throws a bomb first if available, otherwise a bazooka. `"no-weapon"` uses bare hands. |
+
+#### Travel
+
+```json
+"travel": {
+  "maxTravelCC": 100,
+  "returnHomeAfterMinutes": 15,
+  "returnHomeMaxCC": 500
+}
+```
+
+| Field | What it does |
+|---|---|
+| `maxTravelCC` | Maximum currency to spend per travel hop while farming. Battles too expensive to reach are skipped. |
+| `returnHomeAfterMinutes` | Bot travels back to your residence after this many minutes abroad. `0` disables. Mirrors the `.env` value with the same name — but here it can be changed without restarting. |
+| `returnHomeMaxCC` | Max currency to spend on going home. Pricier trips are skipped (with Telegram alert). |
+
+#### Farm session cooldown
+
+```json
+"farmSession": {
+  "cooldownMinMinutes": 30,
+  "cooldownMaxMinutes": 90
+}
+```
+
+After each farm session, the bot waits a random time between Min and Max minutes before becoming eligible again. Spreads out the activity pattern.
+
+**Tip:** the default 30–90 looks natural. Setting both to small values (e.g. 1/1) makes the bot fire as fast as possible — useful for testing but easier to detect.
+
+#### Auto-populated (read-only)
+
+```json
+"detected": {
+  "division": 4,
+  "hasMaverick": false,
+  "airRankNumber": 58,
+  "citizenId": 9566944,
+  "countryId": 72,
+  "lastUpdated": "2026-05-19T14:12:10.010Z"
+}
+```
+
+The bot writes its current observation here each cycle so the dashboard can display it. Editing values has no effect — they'll be overwritten on the next cycle.
+
+---
+
+### Common configuration recipes
+
+**"I'm a low-strength D4 player who wants to farm air medals":**
+
+Edit `config/settings.json`:
+```json
+{
+  "modeOverride": "d4tw-air",
+  "d4twAir": {
+    "targetDamageAttacker": 30000,
+    "targetDamageDefender": 50000,
+    "useWeapon": false
+  }
+}
+```
+
+Save. The bot picks up the change within seconds.
+
+**"I want to log in manually for a few minutes":**
+
+```json
+{ "paused": true }
+```
+
+Save. Bot stops doing anything immediately. Set back to `false` when done.
+
+**"Just do my dailies, skip farming":**
+
+```json
+{ "farmEnabled": false }
+```
+
+**"Use my aircraft weapons":**
+
+```json
+{
+  "d4twAir": {
+    "useWeapon": true,
+    "weaponPriority": [5, 4, 3, 2, 1]
+  }
+}
+```
+
+**"Tighter cooldown — more sessions per day":**
+
+```json
+{
+  "farmSession": {
+    "cooldownMinMinutes": 15,
+    "cooldownMaxMinutes": 45
+  }
+}
+```
+
+**"Add a second account":**
+
+In `.env`:
+```
+ERP_ACCOUNT_SLUG=alt
+ERP_LOGIN=alt@example.com
+ERP_PASSWORD=alt-password
+```
+
+Then `npm run bootstrap` (logs in once, saves the session), then `npm start` (runs against this account). Each account gets its own profile folder and its own `config/settings.json` is shared (so account-specific behavior comes from `modeOverride` etc.).
+
+---
+
 ## Daily runner
 
 ```bash
@@ -198,26 +490,9 @@ There is no test runner and no lint command in this project.
 
 ---
 
-## Environment variables
+## Advanced: standalone farming CLI env vars
 
-### Core (always required)
-
-| Var | Purpose |
-|---|---|
-| `ERP_LOGIN` / `ERP_PASSWORD` | eRepublik credentials. Only read by `bootstrap`. |
-| `ERP_ACCOUNT_SLUG` | Profile directory name under `sessions/profile/<slug>/`. Default `main`. |
-| `ERP_MAX_FOOD_PRICE` | Hard ceiling on Q1 food unit price for `buyFood`. Typical Q1 prices are 0.5–2.0. |
-| `HEADED` | `true` to show the browser. Default `false`. |
-
-### Daily runner
-
-| Var | Purpose |
-|---|---|
-| `LOOP_INTERVAL_MS` | Sleep between cycles in long-running mode. Default `600000` (10 min). |
-| `ERP_COUNTRY_ID` | Fallback only — `countryId` is normally auto-detected from `erepublik.citizen.citizenshipCountryId`. |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Optional. Notifier degrades silently if unset. |
-
-### Farming
+> Most users don't need this section. The daily runner reads its config from `.env` and `config/settings.json` (see [Configuration](#configuration) above). The variables below only affect the operator-only standalone farming CLIs (`npm run farmer` / `npm run farm-one`) — those scripts bypass the daily runner's gate and pacing logic.
 
 | Var | Default | Purpose |
 |---|---|---|

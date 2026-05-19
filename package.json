@@ -16,6 +16,8 @@
     "farmer": "tsx src/farmRunner.ts",
     "debug-deploy": "tsx src/debugDeploy.ts",
     "debug-headers": "tsx src/debugHeaders.ts",
+    "debug-profile": "tsx src/debugProfile.ts",
+    "debug-inventory": "tsx src/debugInventory.ts",
     "start": "tsx src/agent/runner.ts",
     "agent": "tsx src/agent/runner.ts -- --once",
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/ui/public','dist/ui/public',{recursive:true})\"",

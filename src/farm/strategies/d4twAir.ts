@@ -1,7 +1,7 @@
 import type { BrowserContext } from 'playwright-core';
 import { deployWeapon, skinForDivision, getDeployInventory } from '../../tools/farm.js';
 import { listMyCountryActiveBattles, isSideEmpty, type FarmableBattle } from '../../tools/battles.js';
-import { damagePerHit } from '../../tools/damageFormula.js';
+import { damagePerHit, FIREPOWER } from '../../tools/damageFormula.js';
 import { loadInventory, resolveWeapon, type InventoryWeapon } from './inventory.js';
 import { loadSettings } from '../../ui/settingsStore.js';
 import {
@@ -19,8 +19,62 @@ import {
   formatBattleSuccessMessage,
 } from '../../util/battleNotification.js';
 
-const ENERGY_PER_HIT = 10;
-const MIN_DEPLOY_ENERGY = 30; // game minimum for normal weapon / bare hands
+export const ENERGY_PER_HIT = 10;
+export const MIN_DEPLOY_ENERGY = 30;
+export const AIR_WEAPON_TYPE = 'airWeapon'; // verified against live /economy/inventory-json (Q1-Q5 air-to-air missiles)
+export const AIR_DIVISION = 11;
+
+export interface MinEnergyInfo {
+  strength: number | null;
+  airRankNumber: number | null;
+}
+
+export interface MinEnergyCfg {
+  targetDamageAttacker: number;
+  useWeapon: boolean;
+  weaponPriority: readonly number[];
+}
+
+/**
+ * Estimate the minimum energy required to land a single d4tw-air medal on the
+ * OPTIMISTIC (invader / losing) side. Used by the runner to compute the
+ * `minEnergyPerBattle` hint for `decideFarming`. The strategy itself re-checks
+ * with the real per-battle side and fresh pool energy before deploying.
+ */
+export function estimateMinEnergy(
+  info: MinEnergyInfo,
+  cfg: MinEnergyCfg,
+  inventory: readonly InventoryWeapon[],
+): number {
+  if (info.strength == null || info.airRankNumber == null) return MIN_DEPLOY_ENERGY;
+
+  const fp = cfg.useWeapon
+    ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE).firepower
+    : FIREPOWER.bare;
+
+  const dmg = damagePerHit(info.strength, info.airRankNumber, fp);
+
+  const hits = Math.ceil(cfg.targetDamageAttacker / dmg);
+  return Math.max(hits * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
+}
+
+/**
+ * Order battles for the d4tw-air strategy: native=invader (losing side) first,
+ * native=defender (fallback, higher damage target) second. Stable order
+ * within each bucket — preserves input order for deterministic behavior.
+ */
+export function orderByPreferredSide(
+  battles: readonly FarmableBattle[],
+  nativeCountryId: number,
+): FarmableBattle[] {
+  const invaders: FarmableBattle[] = [];
+  const defenders: FarmableBattle[] = [];
+  for (const b of battles) {
+    if (b.invaderId === nativeCountryId) invaders.push(b);
+    else if (b.defenderId === nativeCountryId) defenders.push(b);
+  }
+  return [...invaders, ...defenders];
+}
 
 function emptyResult(reason: string, stopReason: StopReason): FarmSessionResult {
   return {
@@ -36,87 +90,85 @@ function emptyResult(reason: string, stopReason: StopReason): FarmSessionResult 
   };
 }
 
-async function runD4TW(
+async function runD4twAir(
   ctx: BrowserContext,
   info: FarmSessionInfo,
   options: FarmSessionOptions,
 ): Promise<FarmSessionResult> {
-  // Re-read settings inside the strategy (vs accepting them via options).
-  // Tiny duplication vs the read in runCycle, but keeps the strategy
-  // self-contained: callers don't need to know d4tw's config schema.
-  // The race window (settings change between runCycle.loadSettings and here)
-  // is ~ms and harmless — the next cycle picks up any drift.
   const settings = loadSettings();
-  const cfg = settings.d4tw;
+  const cfg = settings.d4twAir;
 
-  // ── Pre-flight checks ───────────────────────────────────────────────────────
-  if (info.strength == null || info.rankNumber == null) {
-    const msg = 'D4-TW: strength/rank unavailable (profile fetch failed?) — skipping cycle';
-    console.log(`[d4tw] ${msg}`);
+  // ── Pre-flight ──────────────────────────────────────────────────────────
+  if (info.strength == null || info.airRankNumber == null) {
+    const msg = 'd4tw-air: strength/airRank unavailable — skipping cycle';
+    console.log(`[d4tw-air] ${msg}`);
     await Promise.resolve(options.notify?.(`⚠️ ${msg}`)).catch(() => undefined);
     return emptyResult(msg, 'no-candidates');
   }
   if (info.currentCountryId !== info.countryId) {
-    const msg = `D4-TW: not in native country (current=${info.currentCountryId}, native=${info.countryId}) — skipping`;
-    console.log(`[d4tw] ${msg}`);
+    const msg = `d4tw-air: not in native country (current=${info.currentCountryId}, native=${info.countryId}) — skipping`;
+    console.log(`[d4tw-air] ${msg}`);
     return emptyResult(msg, 'no-candidates');
   }
 
-  // ── Discovery ───────────────────────────────────────────────────────────────
-  const candidates: FarmableBattle[] = await listMyCountryActiveBattles(ctx, info.csrf, info.countryId);
-  const myDivisionCandidates = candidates.filter((c) => c.division === info.division);
-  if (myDivisionCandidates.length === 0) {
-    const msg = `D4-TW: no active battles for country=${info.countryId} division=${info.division}`;
-    console.log(`[d4tw] ${msg}`);
+  // ── Discovery ───────────────────────────────────────────────────────────
+  const all: FarmableBattle[] = await listMyCountryActiveBattles(ctx, info.csrf, info.countryId);
+  const d11 = all.filter((c) => c.division === AIR_DIVISION);
+  if (d11.length === 0) {
+    const msg = `d4tw-air: no D11 native battles (country=${info.countryId})`;
+    console.log(`[d4tw-air] ${msg}`);
     return emptyResult(msg, 'no-candidates');
   }
+  const ordered = orderByPreferredSide(d11, info.countryId);
 
-  // ── Weapon selection (one inventory read per session) ───────────────────────
-  const inventory = await loadInventory(ctx, info.csrf);
-  const weapon = resolveWeapon(inventory, cfg.weaponPriority);
+  // ── Weapon (reuse preloaded inventory when available) ───────────────────
+  const inventory = options.preloadedInventory ?? (await loadInventory(ctx, info.csrf));
+  const weapon = cfg.useWeapon
+    ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE)
+    : { quality: -1, firepower: FIREPOWER.bare, amountOnHand: Number.POSITIVE_INFINITY };
+
   // Formula-based damage estimate — used only for startup logging AND as a
   // graceful fallback when the server response is missing this weapon quality.
   // The authoritative per-hit damage comes from getDeployInventory below
-  // (server includes NE bonus, terrain, booster effects — none of which the
-  // local formula models). Strictly better than the formula even for ground.
-  const dmgPerHitFallback = damagePerHit(info.strength, info.rankNumber, weapon.firepower);
+  // (server includes air-specific scaling, natural-enemy bonus, terrain,
+  // booster effects — none of which the local formula models).
+  const dmgPerHitFallback = damagePerHit(info.strength, info.airRankNumber, weapon.firepower);
   console.log(
-    `[d4tw] weapon=Q${weapon.quality === -1 ? 'bare' : weapon.quality} ` +
+    `[d4tw-air] weapon=${weapon.quality === -1 ? 'bare' : `Q${weapon.quality}`} ` +
       `fp=${weapon.firepower} dmg/hit≈${Math.floor(dmgPerHitFallback)} (formula estimate) ` +
-      `ammo=${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand}`,
+      `ammo=${weapon.amountOnHand === Number.POSITIVE_INFINITY ? '∞' : weapon.amountOnHand}`,
   );
 
-  // ── Battle loop ─────────────────────────────────────────────────────────────
-  const cap = Math.min(cfg.maxBattlesPerSession, myDivisionCandidates.length);
+  // ── Battle loop ─────────────────────────────────────────────────────────
+  const cap = Math.min(cfg.maxBattlesPerSession, ordered.length);
   const wins: WinSummary[] = [];
   const skipped: SkipSummary[] = [];
-  let stopReason: StopReason = 'completed';
+  const stopReason: StopReason = 'completed';
   let lastFuel: number | null = null;
   let lastPoolEnergy: number | null = null;
 
   for (let i = 0; i < cap; i++) {
-    const battle = myDivisionCandidates[i];
+    const battle = ordered[i];
     const mySide: 'invader' | 'defender' =
       battle.invaderId === info.countryId ? 'invader' : 'defender';
     const targetDmg =
       mySide === 'invader' ? cfg.targetDamageAttacker : cfg.targetDamageDefender;
 
-    // Side-empty check
+    // Empty side check (D11)
     const empty = await isSideEmpty(
       ctx,
       info.csrf,
       battle.battleId,
-      info.division,
+      AIR_DIVISION,
       battle.battleZoneId,
       battle.zoneId,
       mySide,
       battle.invaderId,
       battle.defenderId,
     ).catch((err: Error) => {
-      console.log(`[d4tw] battle ${battle.battleId}: empty-check failed: ${err.message}`);
+      console.log(`[d4tw-air] battle ${battle.battleId}: empty-check failed: ${err.message}`);
       return null;
     });
-
     if (empty === null) {
       skipped.push({ battleId: battle.battleId, regionName: battle.regionName, reason: 'empty-check failed' });
       continue;
@@ -130,17 +182,12 @@ async function runD4TW(
       continue;
     }
 
-    // Battlefield page navigation is REQUIRED before any deploy fetch — the
-    // deploy endpoints check the browser-enforced Referer header, which only
-    // gets set correctly when the page actually navigated there. Skipping
-    // this causes 403/error on getDeployInventory and deployWeapon.
-    // (See CLAUDE.md "Battlefield deploys need a real page navigation first".)
+    // Battlefield page navigation is REQUIRED before deploy fetch — see d4tw.ts comment.
     const page = ctx.pages()[0] ?? (await ctx.newPage());
     await page.goto(`https://www.erepublik.com/en/military/battlefield/${battle.battleId}`, {
       waitUntil: 'domcontentloaded',
     });
 
-    // Get fresh pool energy + skin + authoritative damage/min-energy
     const inv = await getDeployInventory(
       ctx,
       info.csrf,
@@ -151,21 +198,21 @@ async function runD4TW(
     const poolEnergy = inv.poolEnergy ?? 0;
     lastPoolEnergy = poolEnergy;
 
-    // Prefer server-reported damage (true source of truth — includes NE
-    // bonus, terrain, boosters). Fall back to the formula estimate only when
-    // the requested quality isn't in the response.
+    // Prefer server-reported damage (true source of truth — includes
+    // air-specific scaling, NE bonus, boosters, terrain). Fall back to the
+    // formula estimate only when the requested quality isn't in the response.
     const serverDmg = inv.damagePerHitByQuality[weapon.quality];
     const effectiveDmgPerHit = serverDmg ?? dmgPerHitFallback;
     const energyPerHit = inv.minEnergy || ENERGY_PER_HIT;
     const hitsNeeded = Math.ceil(targetDmg / effectiveDmgPerHit);
     const energyToSpend = Math.max(hitsNeeded * energyPerHit, MIN_DEPLOY_ENERGY);
 
-    const ammoOk = weapon.amountOnHand === Infinity || weapon.amountOnHand >= hitsNeeded;
+    const ammoOk = weapon.amountOnHand === Number.POSITIVE_INFINITY || weapon.amountOnHand >= hitsNeeded;
     if (poolEnergy < energyToSpend || !ammoOk) {
       const msg =
         `need ${energyToSpend}e + ${hitsNeeded} ammo, have ${poolEnergy}e / ` +
-        `${weapon.amountOnHand === Infinity ? '∞' : weapon.amountOnHand} ammo`;
-      console.log(`[d4tw] skipped battle ${battle.battleId} (${battle.regionName}) — ${msg}`);
+        `${weapon.amountOnHand === Number.POSITIVE_INFINITY ? '∞' : weapon.amountOnHand} ammo`;
+      console.log(`[d4tw-air] skipped battle ${battle.battleId} (${battle.regionName}) — ${msg}`);
       await Promise.resolve(
         options.notify?.(
           formatBattleFailureMessage(
@@ -175,7 +222,7 @@ async function runD4TW(
               regionName: battle.regionName,
               invaderCountryId: battle.invaderId,
               defenderCountryId: battle.defenderId,
-              division: info.division,
+              division: AIR_DIVISION,
             },
             msg,
           ),
@@ -185,17 +232,18 @@ async function runD4TW(
       continue;
     }
 
-    // One big deploy
     console.log(
-      `[d4tw] 🎯 #${battle.battleId} ${battle.regionName} (${mySide}) ` +
-        `target=${(targetDmg / 1e6).toFixed(0)}M hits=${hitsNeeded} energy=${energyToSpend} ` +
+      `[d4tw-air] 🎯 #${battle.battleId} ${battle.regionName} (${mySide}) ` +
+        `target=${targetDmg} hits=${hitsNeeded} energy=${energyToSpend} ` +
         `dmg/hit=${Math.floor(effectiveDmgPerHit)}${serverDmg != null ? ' (server)' : ' (formula)'}`,
     );
 
+    const sideCountryId = mySide === 'invader' ? battle.invaderId : battle.defenderId;
+    const otherCountryId = mySide === 'invader' ? battle.defenderId : battle.invaderId;
+    const skin = inv.skinId ?? skinForDivision(AIR_DIVISION);
+
     if (options.dryRun) {
-      console.log(`[d4tw]    (dry-run — no POST)`);
-      const sideCountryId = mySide === 'invader' ? battle.invaderId : battle.defenderId;
-      const otherCountryId = mySide === 'invader' ? battle.defenderId : battle.invaderId;
+      console.log('[d4tw-air]    (dry-run — no POST)');
       const outcome: SideOutcome = {
         side: mySide,
         countryId: sideCountryId,
@@ -221,9 +269,6 @@ async function runD4TW(
       continue;
     }
 
-    const sideCountryId = mySide === 'invader' ? battle.invaderId : battle.defenderId;
-    const otherCountryId = mySide === 'invader' ? battle.defenderId : battle.invaderId;
-    const skin = inv.skinId ?? skinForDivision(info.division);
     const result = await deployWeapon(
       ctx,
       info.csrf,
@@ -237,7 +282,7 @@ async function runD4TW(
 
     if (!result.success) {
       const msg = `deploy failed: ${result.message}`;
-      console.log(`[d4tw]    ❌ ${msg}`);
+      console.log(`[d4tw-air]    ❌ ${msg}`);
       await Promise.resolve(
         options.notify?.(
           formatBattleFailureMessage(
@@ -247,7 +292,7 @@ async function runD4TW(
               regionName: battle.regionName,
               invaderCountryId: battle.invaderId,
               defenderCountryId: battle.defenderId,
-              division: info.division,
+              division: AIR_DIVISION,
             },
             msg,
           ),
@@ -258,7 +303,7 @@ async function runD4TW(
     }
 
     if (result.fuelLeft != null) lastFuel = result.fuelLeft;
-    console.log(`[d4tw]    ✅ deployed; fuel=${result.fuelLeft ?? '?'}`);
+    console.log(`[d4tw-air]    ✅ deployed; fuel=${result.fuelLeft ?? '?'}`);
 
     const outcome: SideOutcome = {
       side: mySide,
@@ -290,7 +335,7 @@ async function runD4TW(
           regionName: battle.regionName,
           invaderCountryId: battle.invaderId,
           defenderCountryId: battle.defenderId,
-          division: info.division,
+          division: AIR_DIVISION,
         }),
       ),
     ).catch(() => undefined);
@@ -305,11 +350,11 @@ async function runD4TW(
     poolEnergyAtEnd: lastPoolEnergy,
     totalTravelCC: 0,
     hops: wins.length,
-    sequence: wins.length > 0 ? `d4tw×${wins.length}` : '(no hops)',
+    sequence: wins.length > 0 ? `d4tw-air×${wins.length}` : '(no hops)',
   };
 }
 
-export const d4twStrategy: FarmStrategy = {
-  id: 'd4tw',
-  run: runD4TW,
+export const d4twAirStrategy: FarmStrategy = {
+  id: 'd4tw-air',
+  run: runD4twAir,
 };

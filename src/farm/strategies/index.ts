@@ -1,12 +1,14 @@
 import { standardStrategy } from './standard.js';
 import { d4twStrategy } from './d4tw.js';
 import { maverickD3Strategy } from './maverickD3.js';
+import { d4twAirStrategy } from './d4twAir.js';
 import type { FarmStrategy, StrategyId } from './types.js';
 
 const registry: Partial<Record<StrategyId, FarmStrategy>> = {
   standard: standardStrategy,
   d4tw: d4twStrategy,
   maverickD3: maverickD3Strategy,
+  'd4tw-air': d4twAirStrategy,
 };
 
 export function getStrategy(id: StrategyId): FarmStrategy {
@@ -38,3 +40,4 @@ export {
 export { standardStrategy } from './standard.js';
 export { d4twStrategy } from './d4tw.js';
 export { maverickD3Strategy } from './maverickD3.js';
+export { d4twAirStrategy } from './d4twAir.js';

@@ -37,7 +37,11 @@ import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
 import { loadSettings, saveSettings } from '../ui/settingsStore.js';
 import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js';
-import { travelHome } from '../tools/travel.js';
+import { travelHome, travelToCountry } from '../tools/travel.js';
+import { listMyCountryActiveBattles } from '../tools/battles.js';
+import { loadInventory, resolveWeapon } from '../farm/strategies/inventory.js';
+import { estimateMinEnergy, AIR_WEAPON_TYPE, AIR_DIVISION } from '../farm/strategies/d4twAir.js';
+import type { InventoryWeapon } from '../tools/pickWeapon.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
 import { sleepUntilWake } from '../ui/sleepUntilWake.js';
@@ -226,7 +230,7 @@ async function runCycle(
     ctxInfo = await extractCitizenContext(ctx, { refresh: true });
   }
 
-  const { csrf } = ctxInfo;
+  let { csrf } = ctxInfo;
   const countryId = ctxInfo.countryId ?? env.ERP_COUNTRY_ID ?? null;
   if (countryId == null) {
     throw new Error('countryId not found in browser context and ERP_COUNTRY_ID env not set');
@@ -239,6 +243,22 @@ async function runCycle(
       `, fuel=${ctxInfo.fuelLeft ?? '?'}/${ctxInfo.maxFuel ?? '?'}` +
       `, loc=${ctxInfo.currentRegionId ?? '?'}/${ctxInfo.residenceRegionId ?? '?'} (curr/home)`,
   );
+
+  // Mirror current detected state into settings.detected so the UI can show it.
+  // (Schema in settingsStore.ts; runner is the only writer.)
+  settings.detected = {
+    division: ctxInfo.division,
+    hasMaverick: ctxInfo.hasMaverick,
+    airRankNumber: ctxInfo.airRankNumber,
+    citizenId: ctxInfo.citizenId,
+    countryId: ctxInfo.countryId,
+    lastUpdated: new Date().toISOString(),
+  };
+  try {
+    saveSettings(settings);
+  } catch (err) {
+    console.warn(`[cycle] saveSettings(detected) failed: ${(err as Error).message}`);
+  }
 
   // Track time-away-from-home (mirrors ePlus' startTimeAbroad). Update the
   // timer based on observed location every cycle; the return-home trip is
@@ -371,12 +391,102 @@ async function runCycle(
       console.log(msg);
       bridge.emitLog('info', msg);
     }
+    // Resolve mode early so we can branch the gate inputs for d4tw-air.
+    const mode = settings.farmEnabled && ctxInfo.division != null
+      ? effectiveMode(
+          { modeOverride: settings.modeOverride, maverickManual: settings.maverickManual },
+          { division: ctxInfo.division, hasMaverick: ctxInfo.hasMaverick },
+        )
+      : null;
+
+    // d4tw-air requires real inventory + air rank to estimate per-cycle cost.
+    let minEnergyPerBattle: number | undefined;
+    let preloadedInventory: InventoryWeapon[] | undefined;
+    if (mode === 'd4tw-air') {
+      try {
+        preloadedInventory = await loadInventory(ctx, csrf);
+      } catch (err) {
+        console.warn(`[cycle] d4tw-air: loadInventory failed: ${(err as Error).message}`);
+        preloadedInventory = undefined;
+      }
+      if (preloadedInventory && ctxInfo.strength != null && ctxInfo.airRankNumber != null) {
+        minEnergyPerBattle = estimateMinEnergy(
+          { strength: ctxInfo.strength, airRankNumber: ctxInfo.airRankNumber },
+          settings.d4twAir,
+          preloadedInventory,
+        );
+      }
+    }
+
+    // Abroad pre-flight for d4tw-air: travel home if we have a battle to
+    // fight + enough energy + ammo. Otherwise, leave abroad and let the
+    // idle-branch return-home (`awaySince`-driven) handle it.
+    if (
+      mode === 'd4tw-air' &&
+      ctxInfo.currentCountryId !== countryId &&
+      preloadedInventory != null &&
+      ctxInfo.strength != null &&
+      ctxInfo.airRankNumber != null &&
+      ctxInfo.currentRegionId != null
+    ) {
+      try {
+        const allNative = await listMyCountryActiveBattles(ctx, csrf, countryId).catch(
+          () => [] as Awaited<ReturnType<typeof listMyCountryActiveBattles>>,
+        );
+        const d11native = allNative.filter((b) => b.division === AIR_DIVISION);
+        const cfg = settings.d4twAir;
+
+        const hasEnergy =
+          minEnergyPerBattle != null && (ctxInfo.energy ?? 0) >= minEnergyPerBattle;
+        const hasAmmo =
+          !cfg.useWeapon ||
+          resolveWeapon(preloadedInventory, cfg.weaponPriority, AIR_WEAPON_TYPE).amountOnHand > 0;
+
+        if (d11native.length > 0 && hasEnergy && hasAmmo) {
+          const t = await travelToCountry(
+            ctx,
+            csrf,
+            countryId,
+            ctxInfo.currentRegionId,
+            settings.travel.returnHomeMaxCC,
+          );
+          if (t.success) {
+            console.log(`[cycle] d4tw-air: traveled to native (cost=${t.costCC}cc)`);
+            await notifier.send(`🛫 d4tw-air: traveled to native country (${t.costCC}cc) for D11 battle`);
+            // Refresh context — currentCountryId/region/CSRF changed
+            ctxInfo = await extractCitizenContext(ctx, { refresh: true });
+            csrf = ctxInfo.csrf;
+            state.awaySince =
+              ctxInfo.currentRegionId != null &&
+              ctxInfo.residenceRegionId != null &&
+              ctxInfo.currentRegionId !== ctxInfo.residenceRegionId
+                ? new Date().toISOString()
+                : null;
+          } else if (!t.attempted) {
+            console.log(`[cycle] d4tw-air: travel skipped: ${t.message}`);
+            await notifier.send(`⚠️ d4tw-air: travel skipped — ${t.message}`);
+          } else {
+            console.log(`[cycle] d4tw-air: travel failed: ${t.message}`);
+            await notifier.send(`❌ d4tw-air: travel failed — ${t.message}`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[cycle] d4tw-air abroad pre-flight threw: ${(err as Error).message}`);
+      }
+    }
+
+    const maxBattlesForGate =
+      mode === 'd4tw-air' ? settings.d4twAir.maxBattlesPerSession :
+      mode === 'd4tw' ? settings.d4tw.maxBattlesPerSession :
+      settings.emptyDiv.maxBattlesPerSession;
+
     const decision = settings.farmEnabled
       ? decideFarming({
           weekly: fuel,
           poolEnergy: ctxInfo.energy ?? 0,
           fuelInInventory: fuelAtCycleStart,
-          maxBattlesPerSession: settings.emptyDiv.maxBattlesPerSession,
+          maxBattlesPerSession: maxBattlesForGate,
+          minEnergyPerBattle,
         })
       : {
           shouldFarm: false as const,
@@ -399,16 +509,13 @@ async function runCycle(
 
     if (
       decision.shouldFarm &&
+      mode != null &&
       ctxInfo.division != null &&
       ctxInfo.citizenId != null &&
       ctxInfo.residenceRegionId != null
     ) {
       const residenceCountryId = ctxInfo.residenceCountryId ?? countryId;
       try {
-        const mode = effectiveMode(
-          { modeOverride: settings.modeOverride, maverickManual: settings.maverickManual },
-          { division: ctxInfo.division, hasMaverick: ctxInfo.hasMaverick },
-        );
         if (lastMode !== null && lastMode !== mode) {
           appendHistory({ type: 'mode', from: lastMode, to: mode });
         }
@@ -425,10 +532,15 @@ async function runCycle(
             residenceCountryId,
             strength: ctxInfo.strength,
             rankNumber: ctxInfo.rankNumber,
+            airRankNumber: ctxInfo.airRankNumber,
             hasMaverick: ctxInfo.hasMaverick,
             currentCountryId: ctxInfo.currentCountryId,
           },
-          { maxBattles: decision.battlesThisSession, notify: (m) => notifier.send(m) },
+          {
+            maxBattles: decision.battlesThisSession,
+            notify: (m) => notifier.send(m),
+            preloadedInventory,
+          },
         );
         for (const w of result.wins) {
           appendHistory({ type: 'battle', battleId: w.battleId, regionName: w.regionName, mode });

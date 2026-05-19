@@ -41,3 +41,34 @@ describe('pickWeapon', () => {
     expect(pickWeapon(items, [7])).toEqual({ quality: 7, amount: 10 });
   });
 });
+
+describe('pickWeapon weaponType parameter', () => {
+  const inv = [
+    { type: 'groundWeapon', quality: 7, amount: 100 },
+    { type: 'airWeapon', quality: 5, amount: 50 },
+    { type: 'airWeapon', quality: 3, amount: 10 },
+  ];
+
+  it('defaults to groundWeapon', () => {
+    expect(pickWeapon(inv, [7, 5])).toEqual({ quality: 7, amount: 100 });
+  });
+
+  it('picks airWeapon when requested', () => {
+    expect(pickWeapon(inv, [5, 4, 3, 2, 1], 'airWeapon'))
+      .toEqual({ quality: 5, amount: 50 });
+  });
+
+  it('returns null when no matching type is present', () => {
+    const groundOnly = [{ type: 'groundWeapon', quality: 7, amount: 100 }];
+    expect(pickWeapon(groundOnly, [5, 4, 3], 'airWeapon')).toBeNull();
+  });
+
+  it('ignores groundWeapon items when airWeapon is requested', () => {
+    const mixed = [
+      { type: 'groundWeapon', quality: 5, amount: 99 },
+      { type: 'airWeapon', quality: 3, amount: 10 },
+    ];
+    expect(pickWeapon(mixed, [5, 4, 3, 2, 1], 'airWeapon'))
+      .toEqual({ quality: 3, amount: 10 });
+  });
+});

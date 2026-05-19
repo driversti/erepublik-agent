@@ -7,6 +7,13 @@ export interface DeployInventory {
   skinId: number | null;
   poolEnergy: number;
   hasNoWeaponOption: boolean;
+  /** Server-reported minimum energy per hit (typically 10). */
+  minEnergy: number;
+  /** Map of weapon quality → server-reported damage per hit.
+   *  Key -1 = bare hands. Keys 1-7 = corresponding quality (ground or air).
+   *  Authoritative source — includes natural-enemy bonus, boosters, terrain,
+   *  and division-specific scaling that our local formula does NOT model. */
+  damagePerHitByQuality: Record<number, number>;
 }
 
 /**
@@ -48,6 +55,9 @@ export interface TravelResult {
 interface RawWeapon {
   quality: number;
   amount: number | null;
+  /** Server-computed damage per hit for this weapon. Note JSON key is
+   *  `damageperHit` (lowercase second `p` — eRepublik camelCase quirk). */
+  damageperHit?: number;
 }
 
 interface RawVehicle {
@@ -59,6 +69,8 @@ interface RawDeployInventory {
   weapons?: RawWeapon[];
   vehicles?: RawVehicle[];
   poolEnergy?: number;
+  /** Server-reported minimum energy per hit (typically 10). */
+  minEnergy?: number;
 }
 
 interface RawTravelDataRegion {
@@ -119,12 +131,22 @@ export async function getDeployInventory(
   });
 
   const activeVehicle = body.vehicles?.find((v) => v.isActive);
-  const hasNoWeaponOption = (body.weapons ?? []).some((w) => w.quality === -1);
+  const weapons = body.weapons ?? [];
+  const hasNoWeaponOption = weapons.some((w) => w.quality === -1);
+
+  const damagePerHitByQuality: Record<number, number> = {};
+  for (const w of weapons) {
+    if (typeof w.quality === 'number' && typeof w.damageperHit === 'number') {
+      damagePerHitByQuality[w.quality] = w.damageperHit;
+    }
+  }
 
   return {
     skinId: activeVehicle?.id ?? null,
     poolEnergy: typeof body.poolEnergy === 'number' ? body.poolEnergy : 0,
     hasNoWeaponOption,
+    minEnergy: typeof body.minEnergy === 'number' ? body.minEnergy : 10,
+    damagePerHitByQuality,
   };
 }
 

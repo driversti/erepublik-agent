@@ -1,4 +1,5 @@
 import type { BrowserContext } from 'playwright-core';
+import type { InventoryWeapon } from './inventory.js';
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
@@ -13,6 +14,8 @@ export interface FarmSessionInfo {
   strength: number | null;
   /** Numeric rank (0-based progression value). Null if unavailable. */
   rankNumber: number | null;
+  /** Aircraft rank number (1+). Null when profile fetch failed or field missing. */
+  airRankNumber: number | null;
   /** Whether the citizen has the Maverick perk active. Null if unavailable. */
   hasMaverick: boolean | null;
   /** Country ID of the citizen's current physical location. Null if unavailable. */
@@ -34,6 +37,13 @@ export interface FarmSessionOptions {
   maxAttempts?: number;
   retryDelayMs?: number;
   handoffSleepMs?: number;
+  /**
+   * Pre-loaded inventory snapshot from the runner. When supplied, strategies
+   * SHOULD use it instead of issuing their own `/economy/inventory-json` GET,
+   * to keep the per-cycle HTTP budget small. Strategies that need fresher
+   * data may still re-fetch — the contract is "use if present, fetch if not".
+   */
+  preloadedInventory?: InventoryWeapon[];
   /** Retry budget for the side-B travel hop (medal-critical). */
   travelBRetryAttempts?: number;
   travelBRetryDelayMs?: number;
@@ -127,7 +137,7 @@ export class PartialBattleError extends Error {
 
 // ── Strategy interface ──────────────────────────────────────────────────────
 
-export type StrategyId = 'standard' | 'd4tw' | 'maverickD3';
+export type StrategyId = 'standard' | 'd4tw' | 'maverickD3' | 'd4tw-air';
 
 export interface FarmStrategy {
   readonly id: StrategyId;

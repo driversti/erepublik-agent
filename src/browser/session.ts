@@ -56,6 +56,7 @@ export interface CitizenContext {
   maxFuel: number | null;
   strength: number | null;
   rankNumber: number | null;
+  airRankNumber: number | null;
   hasMaverick: boolean | null;
   /** In-game nickname from `erepublik.citizen.name`. Useful for telling
    *  multi-account installs apart in logs/UI. Null if the global was missing. */
@@ -213,6 +214,7 @@ export async function extractCitizenContext(
 
   let strength: number | null = null;
   let rankNumber: number | null = null;
+  let airRankNumber: number | null = null;
   let hasMaverick: boolean | null = null;
   const citizenId = info.citizenId ?? null;
   if (citizenId != null) {
@@ -226,6 +228,14 @@ export async function extractCitizenContext(
       const milData = (p?.military as Record<string, unknown>)?.militaryData as Record<string, unknown> | undefined;
       strength = typeof milData?.strength === 'number' ? milData.strength : null;
       rankNumber = typeof milData?.rankNumber === 'number' ? milData.rankNumber : null;
+      // Aircraft rank is nested inside `militaryData.aircraft` (verified
+      // against a live /main/citizen-profile-json-personal/{id} response on
+      // 2026-05-19). Ground `rankNumber` lives directly on militaryData; the
+      // aircraft object mirrors that field name one level deeper.
+      const aircraft = milData?.aircraft as Record<string, unknown> | undefined;
+      airRankNumber = typeof aircraft?.rankNumber === 'number'
+        ? aircraft.rankNumber
+        : null;
       const activePacks = p?.activePacks;
       hasMaverick = activePacks != null && typeof activePacks === 'object'
         ? 'division_switch_pack' in activePacks
@@ -257,6 +267,7 @@ export async function extractCitizenContext(
     maxFuel: info.maxFuel ?? null,
     strength,
     rankNumber,
+    airRankNumber,
     hasMaverick,
   };
 }

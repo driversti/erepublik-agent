@@ -112,3 +112,101 @@ export async function travelHome(
     message: body.message ?? '',
   };
 }
+
+interface RawTravelDataCountriesResponse {
+  countries?: Record<string, { regions?: number[] }>;
+  regions?: Record<string, { id: number; cost: number }>;
+}
+
+export interface TravelToCountryResult {
+  /** True if /main/travel was POSTed (false → rejected by guard, no side-effect). */
+  attempted: boolean;
+  /** True when /main/travel returned `error: 0`. */
+  success: boolean;
+  /** Cost (local CC) of the cheapest region in target country, when known. */
+  costCC: number | null;
+  /** Cheapest region selected (null when none reachable). */
+  regionId: number | null;
+  /** Server message or local rejection reason. */
+  message: string;
+}
+
+/**
+ * Travel to the cheapest entry region of a target country. Used by the
+ * d4tw-air strategy to return to native country when farming-eligible
+ * battles exist abroad. Unlike `travelHome`, the destination is the country
+ * (not the citizen's residence), since residence may be outside native.
+ *
+ * Issues two POSTs: `/main/travelData` to discover region costs, then
+ * `/main/travel` to perform the move. The travel-data form mirrors the
+ * shape used by `travelHome` (battleId=0, holdingId=0).
+ */
+export async function travelToCountry(
+  ctx: BrowserContext,
+  csrf: string,
+  toCountryId: number,
+  fromRegionId: number,
+  maxCC: number,
+): Promise<TravelToCountryResult> {
+  // 1. Discover cheapest region in target country
+  const { body: data } = await apiCall<RawTravelDataCountriesResponse>(ctx, {
+    method: 'POST',
+    path: '/en/main/travelData',
+    csrf,
+    form: { holdingId: 0, battleId: 0, regionId: fromRegionId },
+  });
+  const country = data.countries?.[String(toCountryId)];
+  if (!country?.regions?.length) {
+    return {
+      attempted: false,
+      success: false,
+      costCC: null,
+      regionId: null,
+      message: 'no reachable region',
+    };
+  }
+  let best: { regionId: number; cost: number } | null = null;
+  for (const rid of country.regions) {
+    const r = data.regions?.[String(rid)];
+    if (!r) continue;
+    if (!best || r.cost < best.cost) best = { regionId: r.id, cost: r.cost };
+  }
+  if (!best) {
+    return {
+      attempted: false,
+      success: false,
+      costCC: null,
+      regionId: null,
+      message: 'no reachable region',
+    };
+  }
+  if (best.cost > maxCC) {
+    return {
+      attempted: false,
+      success: false,
+      costCC: best.cost,
+      regionId: best.regionId,
+      message: `cost ${best.cost}cc exceeds budget ${maxCC}cc`,
+    };
+  }
+
+  // 2. Travel
+  const { body } = await apiCall<RawTravelResponse>(ctx, {
+    method: 'POST',
+    path: '/en/main/travel',
+    csrf,
+    form: {
+      check: 'moveAction',
+      travelMethod: 'preferCurrency',
+      inRegionId: best.regionId,
+      toCountryId,
+    },
+  });
+  return {
+    attempted: true,
+    success: body.error === 0,
+    costCC: best.cost,
+    regionId: best.regionId,
+    message: body.message ?? '',
+  };
+}

@@ -46,6 +46,13 @@ export interface FarmInputs {
    * `DEFAULT_MAX_BATTLES_PER_SESSION` when omitted.
    */
   maxBattlesPerSession?: number;
+  /**
+   * Override the default `ENERGY_PER_BATTLE` floor in the gate's hard-stop
+   * check. Strategies like `d4tw-air` farm cheaper medals (~30 energy/medal)
+   * and pass a smaller value to avoid being blocked when the standard 66
+   * threshold would falsely reject a viable cycle.
+   */
+  minEnergyPerBattle?: number;
   /** Defaults to `new Date()` — pass explicit Date for tests. */
   now?: Date;
 }
@@ -90,8 +97,9 @@ export function decideFarming(inputs: FarmInputs): FarmDecision {
   // ── Hard stops ─────────────────────────────────────────────────────────────
   if (remaining <= 0) return no(`weekly budget exhausted (${spent}/${WEEKLY_BUDGET})`);
   if (inputs.fuelInInventory <= 0) return no('no fuel barrels in inventory');
-  if (inputs.poolEnergy < ENERGY_PER_BATTLE) {
-    return no(`pool energy ${inputs.poolEnergy} < ${ENERGY_PER_BATTLE} (one battle)`);
+  const minEnergy = inputs.minEnergyPerBattle ?? ENERGY_PER_BATTLE;
+  if (inputs.poolEnergy < minEnergy) {
+    return no(`pool energy ${inputs.poolEnergy} < ${minEnergy} (one battle)`);
   }
 
   // ── Cooldown jitter (set at end of previous session) ───────────────────────
@@ -109,7 +117,7 @@ export function decideFarming(inputs: FarmInputs): FarmDecision {
   }
 
   // ── Session size ───────────────────────────────────────────────────────────
-  const energyBudget = Math.floor(inputs.poolEnergy / ENERGY_PER_BATTLE);
+  const energyBudget = Math.floor(inputs.poolEnergy / minEnergy);
   const fuelBudget = Math.min(inputs.fuelInInventory, remaining);
   // If we're behind pace, allow a small catch-up; otherwise just stay on rhythm.
   const paceBudget = Math.max(1, target - spent + 2);
