@@ -1,9 +1,8 @@
 import type { BrowserContext } from 'playwright-core';
-import { apiCall } from '../../transport/apiCall.js';
 import { deployWeapon, skinForDivision, getDeployInventory } from '../../tools/farm.js';
 import { listMyCountryActiveBattles, isSideEmpty, type FarmableBattle } from '../../tools/battles.js';
-import { damagePerHit, FIREPOWER } from '../../tools/damageFormula.js';
-import { pickWeapon, type InventoryWeapon } from '../../tools/pickWeapon.js';
+import { damagePerHit } from '../../tools/damageFormula.js';
+import { loadInventory, resolveWeapon, type InventoryWeapon } from './inventory.js';
 import { loadSettings } from '../../ui/settingsStore.js';
 import {
   type FarmStrategy,
@@ -22,43 +21,6 @@ import {
 
 const ENERGY_PER_HIT = 10;
 const MIN_DEPLOY_ENERGY = 30; // game minimum for normal weapon / bare hands
-
-interface InventoryCategory {
-  id?: string;
-  items?: InventoryWeapon[];
-}
-
-async function loadInventory(ctx: BrowserContext, csrf: string): Promise<InventoryWeapon[]> {
-  const { body } = await apiCall<InventoryCategory[]>(ctx, {
-    method: 'GET',
-    path: '/en/economy/inventory-json',
-    csrf,
-  });
-  const main = Array.isArray(body) ? body.find((c) => c.id === 'mainStorage') : undefined;
-  return main?.items ?? [];
-}
-
-interface ResolvedWeapon {
-  /** Quality 1-7, or -1 for bare hands. */
-  quality: number;
-  /** Firepower for the damage formula. */
-  firepower: number;
-  /** Ammo on hand (Infinity for bare hands). */
-  amountOnHand: number;
-}
-
-function resolveWeapon(inventory: InventoryWeapon[], priority: readonly number[]): ResolvedWeapon {
-  const picked = pickWeapon(inventory, priority);
-  if (!picked) {
-    return { quality: -1, firepower: FIREPOWER.bare, amountOnHand: Number.POSITIVE_INFINITY };
-  }
-  const fpKey = `Q${picked.quality}` as keyof typeof FIREPOWER;
-  return {
-    quality: picked.quality,
-    firepower: FIREPOWER[fpKey],
-    amountOnHand: picked.amount,
-  };
-}
 
 function emptyResult(reason: string, stopReason: StopReason): FarmSessionResult {
   return {
