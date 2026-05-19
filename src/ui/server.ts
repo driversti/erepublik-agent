@@ -182,11 +182,12 @@ async function listen(server: Server, port: number, host: string): Promise<void>
 }
 
 /**
- * Start the UI server bound to 127.0.0.1. If `port` is omitted, tries ports
- * 3737..3747 until one is free; throws if all are busy.
+ * Start the UI server. Binds to 0.0.0.0 by default (reachable from LAN); set
+ * ERP_UI_HOST=127.0.0.1 to restrict to loopback. If `port` is omitted, tries
+ * ports 3737..3747 until one is free; throws if all are busy.
  */
 export async function startUiServer(opts: StartOptions): Promise<ServerHandle> {
-  const host = '127.0.0.1';
+  const host = process.env.ERP_UI_HOST ?? '0.0.0.0';
   const server = createServer((req, res) => handle(req, res, opts));
 
   let chosenPort: number | null = null;

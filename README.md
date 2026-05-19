@@ -55,6 +55,39 @@ After `bootstrap`, the CloakBrowser profile lives in `sessions/profile/<ERP_ACCO
 
 For a second account: set a different `ERP_ACCOUNT_SLUG`, re-run `bootstrap`, then point the agent / farmer at that slug.
 
+### Running on Linux (headless server / LXC)
+
+CloakBrowser ships its own Chromium binary, but it relies on system shared libraries that aren't present in minimal Linux installs (LXC templates, slim Docker images, fresh VPS). The first launch typically fails with:
+
+```
+error while loading shared libraries: libnspr4.so: cannot open shared object file
+```
+
+**Fix on Ubuntu / Debian:**
+
+```bash
+sudo apt update
+sudo apt install -y \
+  libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+  libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+  libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64 \
+  libatspi2.0-0 libwayland-client0 fonts-liberation libu2f-udev
+```
+
+On Ubuntu 22.04 the package is `libasound2` (not `libasound2t64`).
+
+Verify nothing is still missing:
+
+```bash
+ldd /home/<user>/.cloakbrowser/chromium-*/chrome | grep "not found"
+```
+
+Should print nothing.
+
+**Headless bootstrap (no desktop on the server):** `bootstrap.ts` will fill the login form and submit automatically when `HEADED=false`. Put `ERP_LOGIN` / `ERP_PASSWORD` in `.env`, set `HEADED=false`, then run `npm run bootstrap`. The session is persisted in `sessions/profile/<slug>/` exactly the same way as a headed login.
+
+> **Caveat:** if eRepublik shows a captcha **on the login form itself** (common from a brand-new datacentre IP), headless bootstrap can't pass it — `bootstrap.ts` only handles the in-game session-unlock captcha, not the login one. Workaround: run `HEADED=true npm run bootstrap` on your local desktop, then `scp -r sessions/profile/<slug>/` to the server. The profile is portable.
+
 ---
 
 ## Configuration
@@ -117,6 +150,7 @@ When eRepublik shows its "click the lock" verification challenge, the bot can ei
 |---|---|---|
 | `HEADED` | `false` | `true` opens a visible Chromium window so you can watch what the bot is doing. Useful when something looks wrong. |
 | `LOOP_INTERVAL_MS` | `600000` | How long the bot sleeps between cycles, in milliseconds. `600000` = 10 minutes. Shorter = more checks but more load. |
+| `ERP_UI_HOST` | `0.0.0.0` | Interface the UI dashboard binds to. Default reaches the whole LAN (handy when running in an LXC / headless server and opening the UI from your laptop). Set to `127.0.0.1` to restrict to loopback only. **The UI has no authentication** — keep it off the public internet; LAN-only or behind a reverse proxy with auth. |
 
 #### Auto return-home
 
@@ -175,6 +209,16 @@ All three are equivalent. The file write is atomic (tempfile + rename), so you'l
 | `farmEnabled` | `true` / `false` | When `false`, the bot still does daily chores (work, train, claim rewards) but skips the medal-farming step. |
 | `modeOverride` | `null`, `"standard"`, `"d4tw"`, `"d4tw-air"`, `"maverickD3"` | Force a specific farming strategy. `null` (default) = auto-detect based on your division. See "Strategies" below. |
 | `maverickManual` | `true` / `false` / `null` | Override the Maverick-pack auto-detection. Leave `null` to let the bot decide. |
+
+> **Note on naming — dash vs camelCase.** The air strategy uses two different spellings in `settings.json` and that is intentional:
+> - `modeOverride: "d4tw-air"` — **kebab-case with a dash**, because it's the strategy ID (matches the `getStrategy()` registry key).
+> - `"d4twAir": { ... }` — **camelCase**, because it's a regular JSON field name (consistent with other settings like `farmEnabled`, `maxBattlesPerSession`).
+>
+> So a valid config looks like:
+> ```json
+> { "modeOverride": "d4tw-air", "d4twAir": { ... } }
+> ```
+> Zod will reject `"d4twAir"` as a `modeOverride` value, and `"d4tw-air"` as a block key won't be read.
 
 #### Strategies
 
