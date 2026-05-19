@@ -136,7 +136,7 @@ async function runD4twAir(
   const cap = Math.min(cfg.maxBattlesPerSession, ordered.length);
   const wins: WinSummary[] = [];
   const skipped: SkipSummary[] = [];
-  const stopReason: StopReason = 'completed';
+  let stopReason: StopReason = 'completed';
   let lastFuel: number | null = null;
   let lastPoolEnergy: number | null = null;
 
