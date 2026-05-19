@@ -168,8 +168,10 @@ function scheduleSave(mutator) {
 function bindControls() {
   const paused = document.getElementById('toggle-paused');
   const farm = document.getElementById('toggle-farmEnabled');
+  const autoEmploy = document.getElementById('toggle-autoEmploy');
   if (paused) paused.addEventListener('change', (e) => scheduleSave((s) => (s.paused = e.target.checked)));
   if (farm) farm.addEventListener('change', (e) => scheduleSave((s) => (s.farmEnabled = e.target.checked)));
+  if (autoEmploy) autoEmploy.addEventListener('change', (e) => scheduleSave((s) => (s.autoEmploy = e.target.checked)));
   const mode = document.getElementById('mode-override');
   if (mode) mode.addEventListener('change', (e) => scheduleSave((s) => (s.modeOverride = e.target.value || null)));
   const maverick = document.getElementById('maverick-manual');
@@ -262,8 +264,10 @@ function renderSettingsForm(s) {
   lastSettings = s;
   const paused = document.getElementById('toggle-paused');
   const farm = document.getElementById('toggle-farmEnabled');
+  const autoEmploy = document.getElementById('toggle-autoEmploy');
   if (paused && document.activeElement !== paused) paused.checked = !!s.paused;
   if (farm && document.activeElement !== farm) farm.checked = !!s.farmEnabled;
+  if (autoEmploy && document.activeElement !== autoEmploy) autoEmploy.checked = !!s.autoEmploy;
   const mode = document.getElementById('mode-override');
   if (mode && document.activeElement !== mode) mode.value = s.modeOverride ?? '';
   const maverick = document.getElementById('maverick-manual');

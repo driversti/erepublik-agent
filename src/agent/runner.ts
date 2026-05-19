@@ -23,6 +23,7 @@ import { getWeeklyChallenge, collectWeeklyChallenge } from '../tools/weekly.js';
 import { loadWeekly, saveWeekly, type WeeklyState } from '../memory/weeklyState.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
 import { work } from '../tools/work.js';
+import { ensureEmployed } from '../tools/jobMarket.js';
 import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
@@ -141,9 +142,34 @@ async function runAction(
   csrf: string,
   countryId: number,
   state: DailyState,
+  opts: { autoEmploy: boolean; notify: (m: string) => Promise<void> },
 ): Promise<void> {
   const at = new Date().toISOString();
   if (action === 'work') {
+    if (opts.autoEmploy) {
+      try {
+        const ensure = await ensureEmployed(ctx, csrf, countryId);
+        if (ensure.action === 'applied') {
+          state.notifiedNoJobToday = false;
+          const wage = ensure.netSalary ?? ensure.salary;
+          const msg =
+            `💼 auto-employ: hired by ${ensure.employerName} ` +
+            `for ${wage} ${ensure.currency ?? ''}`.trim();
+          console.log(`[cycle] ${msg}`);
+          await opts.notify(msg);
+        } else if (ensure.action === 'no_jobs' || ensure.action === 'foreign_country') {
+          const reason = ensure.reason ?? ensure.action;
+          console.log(`[cycle] work: skipped — ${reason}`);
+          if (!state.notifiedNoJobToday) {
+            await opts.notify(`⚠️ work skipped — ${reason}`);
+            state.notifiedNoJobToday = true;
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn(`[cycle] ensureEmployed threw: ${(err as Error).message} — attempting work anyway`);
+      }
+    }
     const r = await work(ctx, csrf);
     if (r.success) state.completedActions.work = { at, source: 'agent' };
     console.log(`[cycle] work: ${r.success ? '✅' : '❌'} status=${r.status}`);
@@ -322,7 +348,10 @@ async function runCycle(
       // 1. Run pending safe-daily actions in a fixed order.
       for (const action of pending) {
         try {
-          await runAction(action, ctx, csrf, countryId, state);
+          await runAction(action, ctx, csrf, countryId, state, {
+            autoEmploy: settings.autoEmploy,
+            notify: (m) => notifier.send(m),
+          });
         } catch (err) {
           const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
           console.error(msg);

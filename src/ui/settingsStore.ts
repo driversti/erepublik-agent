@@ -56,6 +56,9 @@ const DetectedState = z.object({
 export const Settings = z.object({
   paused: z.boolean().default(false),
   farmEnabled: z.boolean().default(true),
+  // Auto-apply for the highest-salary job in the citizen's country before
+  // attempting the daily `work` action when the citizen is unemployed.
+  autoEmploy: z.boolean().default(true),
   modeOverride: StrategyId.nullable().default(null),
   maverickManual: z.boolean().nullable().default(null),
   d4tw: D4TWSettings.default(() => ({
@@ -113,12 +116,22 @@ function envNum(key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function envBool(key: string, fallback: boolean): boolean {
+  const v = process.env[key];
+  if (v == null || v === '') return fallback;
+  const norm = v.trim().toLowerCase();
+  if (norm === 'true' || norm === '1' || norm === 'yes') return true;
+  if (norm === 'false' || norm === '0' || norm === 'no') return false;
+  return fallback;
+}
+
 /**
  * Build the initial settings object on first run, sourcing migrated values
  * from .env when present. Keys not in .env fall through to schema defaults.
  */
 function buildInitial(): Settings {
   return Settings.parse({
+    autoEmploy: envBool('ERP_AUTO_EMPLOY', true),
     emptyDiv: {
       maxBattlesPerSession: envNum('ERP_EMPTY_DIV_MAX_BATTLES_PER_SESSION', 3),
     },
