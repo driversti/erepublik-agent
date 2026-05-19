@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from 'playwright-core';
 import { assertAllowed, type HttpMethod } from './allowlist.js';
+import { ForbiddenError } from './errors.js';
 
 const BASE = 'https://www.erepublik.com';
 
@@ -83,6 +84,29 @@ export async function apiCall<T = unknown>(ctx: BrowserContext, input: ApiCallIn
     },
     { url, method: input.method, form, referer },
   );
+
+  return processResponse<T>(input, evalResult);
+}
+
+/**
+ * Pure response processor — extracted for testability. Handles three cases:
+ *
+ *  1. HTTP 403 → throw `ForbiddenError` *before* the content-type check.
+ *     eRepublik serves Cloudflare's HTML interstitial (not JSON) on rate-limit
+ *     blocks; the original code surfaced this as a generic "Non-JSON response"
+ *     error, which strategies couldn't pattern-match. Now they catch the
+ *     concrete error class and abort the run.
+ *  2. Non-JSON, non-403 → throw the original "Non-JSON response" diagnostic
+ *     (preserves the snippet for easier debugging on unexpected formats).
+ *  3. Otherwise → parse JSON and return `{ status, body }`.
+ */
+export function processResponse<T>(
+  input: Pick<ApiCallInput, 'method' | 'path'>,
+  evalResult: { status: number; contentType: string; text: string },
+): ApiCallResult<T> {
+  if (evalResult.status === 403) {
+    throw new ForbiddenError(`${input.method} ${input.path}`);
+  }
 
   if (!evalResult.contentType.includes('json')) {
     throw new Error(

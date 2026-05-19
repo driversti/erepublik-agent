@@ -96,44 +96,16 @@ export interface FarmSessionResult {
 }
 
 // ── Errors ──────────────────────────────────────────────────────────────────
+// Classes themselves live in `src/transport/errors.ts` so `apiCall.ts` can
+// throw `ForbiddenError` on HTTP 403 without creating an import cycle through
+// the strategy layer. We re-export here to preserve the existing public surface
+// (`./types.js`) for all existing strategy imports.
 
-export class ForbiddenError extends Error {
-  constructor(public readonly endpoint: string) {
-    super(`eRepublik returned "Forbidden" on ${endpoint} — IP/account flagged`);
-    this.name = 'ForbiddenError';
-  }
-}
-
-export class EnergyExhaustedError extends Error {
-  constructor(public readonly poolEnergy: number | null, public readonly lastMessage?: string) {
-    super(
-      `Pool energy exhausted (poolEnergy=${poolEnergy ?? '?'}, last message="${lastMessage ?? ''}") — runner stopping`,
-    );
-    this.name = 'EnergyExhaustedError';
-  }
-}
-
-/**
- * Thrown when side A hit was already committed (deploy returned, fuel barrel
- * spent) but side B failed — travel exhausted retries, deploy threw, or pool
- * went empty. The medal on side B is forfeit; the caller should alert the
- * operator so they can finish the battle manually.
- */
-export class PartialBattleError extends Error {
-  constructor(
-    public readonly battleId: number,
-    public readonly regionName: string,
-    public readonly sideA: SideOutcome,
-    public readonly stage: 'travel-b' | 'deploy-b',
-    public readonly cause: Error,
-  ) {
-    super(
-      `Partial battle ${battleId} (${regionName}): side A (${sideA.side}) landed ` +
-        `(verified=${sideA.verified}), side B failed at ${stage}: ${cause.message}`,
-    );
-    this.name = 'PartialBattleError';
-  }
-}
+export {
+  ForbiddenError,
+  EnergyExhaustedError,
+  PartialBattleError,
+} from '../../transport/errors.js';
 
 // ── Strategy interface ──────────────────────────────────────────────────────
 
