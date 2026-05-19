@@ -425,6 +425,7 @@ async function runCycle(
             residenceCountryId,
             strength: ctxInfo.strength,
             rankNumber: ctxInfo.rankNumber,
+            airRankNumber: ctxInfo.airRankNumber,
             hasMaverick: ctxInfo.hasMaverick,
             currentCountryId: ctxInfo.currentCountryId,
           },

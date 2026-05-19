@@ -54,6 +54,7 @@ try {
       residenceCountryId,
       strength: raw.strength,
       rankNumber: raw.rankNumber,
+      airRankNumber: raw.airRankNumber,
       hasMaverick: raw.hasMaverick,
       currentCountryId: raw.currentCountryId,
     },

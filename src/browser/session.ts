@@ -56,6 +56,7 @@ export interface CitizenContext {
   maxFuel: number | null;
   strength: number | null;
   rankNumber: number | null;
+  airRankNumber: number | null;
   hasMaverick: boolean | null;
   /** In-game nickname from `erepublik.citizen.name`. Useful for telling
    *  multi-account installs apart in logs/UI. Null if the global was missing. */
@@ -257,6 +258,7 @@ export async function extractCitizenContext(
     maxFuel: info.maxFuel ?? null,
     strength,
     rankNumber,
+    airRankNumber: null,   // populated in Task 4
     hasMaverick,
   };
 }
