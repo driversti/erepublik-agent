@@ -180,4 +180,20 @@ describe('Settings d4twAir defaults', () => {
     const parsed = Settings.parse({});
     expect(parsed.detected.airRankNumber).toBeNull();
   });
+
+  it('rejects targetDamageAttacker of 0', () => {
+    expect(() => Settings.parse({ d4twAir: { targetDamageAttacker: 0 } })).toThrow();
+  });
+
+  it('rejects targetDamageDefender of -1', () => {
+    expect(() => Settings.parse({ d4twAir: { targetDamageDefender: -1 } })).toThrow();
+  });
+
+  it('rejects maxBattlesPerSession of 0', () => {
+    expect(() => Settings.parse({ d4twAir: { maxBattlesPerSession: 0 } })).toThrow();
+  });
+
+  it('rejects maxBattlesPerSession above 10', () => {
+    expect(() => Settings.parse({ d4twAir: { maxBattlesPerSession: 11 } })).toThrow();
+  });
 });
