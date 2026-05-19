@@ -1,4 +1,5 @@
 import type { BrowserContext } from 'playwright-core';
+import type { InventoryWeapon } from './inventory.js';
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ export interface FarmSessionOptions {
    * to keep the per-cycle HTTP budget small. Strategies that need fresher
    * data may still re-fetch — the contract is "use if present, fetch if not".
    */
-  preloadedInventory?: import('./inventory.js').InventoryWeapon[];
+  preloadedInventory?: InventoryWeapon[];
   /** Retry budget for the side-B travel hop (medal-critical). */
   travelBRetryAttempts?: number;
   travelBRetryDelayMs?: number;

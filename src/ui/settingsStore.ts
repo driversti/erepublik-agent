@@ -5,7 +5,7 @@ import { configDir } from '../paths.js';
 
 // ── Schema (matches spec §4.1) ──────────────────────────────────────────────
 
-const StrategyId = z.enum(['standard', 'd4tw', 'maverickD3']);
+const StrategyId = z.enum(['standard', 'd4tw', 'maverickD3', 'd4tw-air']);
 
 const D4TWSettings = z.object({
   targetDamageAttacker: z.number().int().positive().default(130_000_000),
