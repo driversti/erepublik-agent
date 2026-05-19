@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settingsStore.js';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, Settings } from './settingsStore.js';
 
 describe('settingsStore', () => {
   let tmpRoot: string;
@@ -144,5 +144,40 @@ describe('settingsStore', () => {
       const tmpFile = join(tmpRoot, 'config', 'settings.json.tmp');
       expect(existsSync(tmpFile)).toBe(false);
     });
+  });
+});
+
+describe('Settings d4twAir defaults', () => {
+  it('parses an old settings.json without d4twAir', () => {
+    const parsed = Settings.parse({
+      paused: false,
+      farmEnabled: true,
+      modeOverride: null,
+      maverickManual: null,
+      // No d4twAir block
+    });
+    expect(parsed.d4twAir).toEqual({
+      targetDamageAttacker: 30_000,
+      targetDamageDefender: 50_000,
+      maxBattlesPerSession: 1,
+      useWeapon: false,
+      weaponPriority: [5, 4, 3, 2, 1],
+    });
+  });
+
+  it('accepts d4tw-air as a modeOverride', () => {
+    const parsed = Settings.parse({ modeOverride: 'd4tw-air' });
+    expect(parsed.modeOverride).toBe('d4tw-air');
+  });
+
+  it('rejects weaponPriority entries above 5', () => {
+    expect(() =>
+      Settings.parse({ d4twAir: { weaponPriority: [7, 6, 5] } }),
+    ).toThrow();
+  });
+
+  it('detected.airRankNumber defaults to null', () => {
+    const parsed = Settings.parse({});
+    expect(parsed.detected.airRankNumber).toBeNull();
   });
 });

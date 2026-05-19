@@ -14,6 +14,14 @@ const D4TWSettings = z.object({
   weaponPriority: z.array(z.number().int().min(1).max(7)).default([7, 6, 5, 4, 3, 2, 1]),
 });
 
+const D4TWAirSettings = z.object({
+  targetDamageAttacker: z.number().int().positive().default(30_000),
+  targetDamageDefender: z.number().int().positive().default(50_000),
+  maxBattlesPerSession: z.number().int().min(1).max(10).default(1),
+  useWeapon: z.boolean().default(false),
+  weaponPriority: z.array(z.number().int().min(1).max(5)).default([5, 4, 3, 2, 1]),
+});
+
 const EmptyDivSettings = z.object({
   maxBattlesPerSession: z.number().int().min(1).max(10).default(3),
   nativeWeaponPriority: z.array(z.number().int().min(1).max(7)).default([7, 6, 5, 4, 3, 2, 1]),
@@ -39,6 +47,7 @@ const FarmSessionSettings = z
 const DetectedState = z.object({
   division: z.number().int().nullable().default(null),
   hasMaverick: z.boolean().nullable().default(null),
+  airRankNumber: z.number().int().nullable().default(null),
   citizenId: z.number().int().nullable().default(null),
   countryId: z.number().int().nullable().default(null),
   lastUpdated: z.string().nullable().default(null),
@@ -54,6 +63,13 @@ export const Settings = z.object({
     targetDamageDefender: 220_000_000,
     maxBattlesPerSession: 1,
     weaponPriority: [7, 6, 5, 4, 3, 2, 1],
+  })),
+  d4twAir: D4TWAirSettings.default(() => ({
+    targetDamageAttacker: 30_000,
+    targetDamageDefender: 50_000,
+    maxBattlesPerSession: 1,
+    useWeapon: false,
+    weaponPriority: [5, 4, 3, 2, 1],
   })),
   emptyDiv: EmptyDivSettings.default(() => ({
     maxBattlesPerSession: 3,
@@ -72,6 +88,7 @@ export const Settings = z.object({
   detected: DetectedState.default(() => ({
     division: null,
     hasMaverick: null,
+    airRankNumber: null,
     citizenId: null,
     countryId: null,
     lastUpdated: null,
