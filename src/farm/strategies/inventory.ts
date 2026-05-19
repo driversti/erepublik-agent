@@ -38,7 +38,7 @@ export interface ResolvedWeapon {
 export function resolveWeapon(
   inventory: readonly InventoryWeapon[],
   priority: readonly number[],
-  weaponType: 'groundWeapon' | 'aircraftWeapon' | 'groundBomb' = 'groundWeapon',
+  weaponType: 'groundWeapon' | 'airWeapon' | 'groundBomb' = 'groundWeapon',
 ): ResolvedWeapon {
   const picked = pickWeapon(inventory, priority, weaponType);
   if (!picked) {

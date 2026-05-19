@@ -21,7 +21,7 @@ import {
 
 export const ENERGY_PER_HIT = 10;
 export const MIN_DEPLOY_ENERGY = 30;
-export const AIRCRAFT_WEAPON_TYPE = 'aircraftWeapon'; // TODO: verify against live inventory JSON (plan §0b)
+export const AIR_WEAPON_TYPE = 'airWeapon'; // verified against live /economy/inventory-json (Q1-Q5 air-to-air missiles)
 export const AIR_DIVISION = 11;
 
 export interface MinEnergyInfo {
@@ -49,7 +49,7 @@ export function estimateMinEnergy(
   if (info.strength == null || info.airRankNumber == null) return MIN_DEPLOY_ENERGY;
 
   const fp = cfg.useWeapon
-    ? resolveWeapon(inventory, cfg.weaponPriority, AIRCRAFT_WEAPON_TYPE).firepower
+    ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE).firepower
     : FIREPOWER.bare;
 
   const dmg = damagePerHit(info.strength, info.airRankNumber, fp);
@@ -124,7 +124,7 @@ async function runD4twAir(
   // ── Weapon (reuse preloaded inventory when available) ───────────────────
   const inventory = options.preloadedInventory ?? (await loadInventory(ctx, info.csrf));
   const weapon = cfg.useWeapon
-    ? resolveWeapon(inventory, cfg.weaponPriority, AIRCRAFT_WEAPON_TYPE)
+    ? resolveWeapon(inventory, cfg.weaponPriority, AIR_WEAPON_TYPE)
     : { quality: -1, firepower: FIREPOWER.bare, amountOnHand: Number.POSITIVE_INFINITY };
 
   const dmgPerHit = damagePerHit(info.strength, info.airRankNumber, weapon.firepower);

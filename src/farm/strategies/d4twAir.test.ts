@@ -31,7 +31,7 @@ describe('estimateMinEnergy', () => {
     // Strong account: S=300k, R=30, FP=100 (Q5) → D huge → 1 hit
     const info = { strength: 300_000, airRankNumber: 30 };
     const inv: InventoryWeapon[] = [
-      { type: 'aircraftWeapon', quality: 5, amount: 99 },
+      { type: 'airWeapon', quality: 5, amount: 99 },
     ];
     const got = estimateMinEnergy(info, { ...cfg, useWeapon: true }, inv);
     expect(got).toBe(30);
@@ -42,7 +42,7 @@ describe('estimateMinEnergy', () => {
     // hits for 30k = ceil(30000/10080) = 3 → energy = 30
     const info = { strength: 50_000, airRankNumber: 15 };
     const inv: InventoryWeapon[] = [
-      { type: 'aircraftWeapon', quality: 5, amount: 50 },
+      { type: 'airWeapon', quality: 5, amount: 50 },
     ];
     expect(estimateMinEnergy(info, { ...cfg, useWeapon: true }, inv)).toBe(30);
   });

@@ -40,7 +40,7 @@ import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js'
 import { travelHome, travelToCountry } from '../tools/travel.js';
 import { listMyCountryActiveBattles } from '../tools/battles.js';
 import { loadInventory, resolveWeapon } from '../farm/strategies/inventory.js';
-import { estimateMinEnergy, AIRCRAFT_WEAPON_TYPE, AIR_DIVISION } from '../farm/strategies/d4twAir.js';
+import { estimateMinEnergy, AIR_WEAPON_TYPE, AIR_DIVISION } from '../farm/strategies/d4twAir.js';
 import type { InventoryWeapon } from '../tools/pickWeapon.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
@@ -440,7 +440,7 @@ async function runCycle(
           minEnergyPerBattle != null && (ctxInfo.energy ?? 0) >= minEnergyPerBattle;
         const hasAmmo =
           !cfg.useWeapon ||
-          resolveWeapon(preloadedInventory, cfg.weaponPriority, AIRCRAFT_WEAPON_TYPE).amountOnHand > 0;
+          resolveWeapon(preloadedInventory, cfg.weaponPriority, AIR_WEAPON_TYPE).amountOnHand > 0;
 
         if (d11native.length > 0 && hasEnergy && hasAmmo) {
           const t = await travelToCountry(
