@@ -40,7 +40,7 @@ import { handleCaptchaIfPresent, type CaptchaConfig } from '../tools/captcha.js'
 import { travelHome, travelToCountry } from '../tools/travel.js';
 import { listMyCountryActiveBattles } from '../tools/battles.js';
 import { loadInventory, resolveWeapon } from '../farm/strategies/inventory.js';
-import { estimateMinEnergy, AIRCRAFT_WEAPON_TYPE } from '../farm/strategies/d4twAir.js';
+import { estimateMinEnergy, AIRCRAFT_WEAPON_TYPE, AIR_DIVISION } from '../farm/strategies/d4twAir.js';
 import type { InventoryWeapon } from '../tools/pickWeapon.js';
 import { startUiServer } from '../ui/server.js';
 import { createSnapshot, type UiSnapshot } from '../ui/snapshot.js';
@@ -417,7 +417,7 @@ async function runCycle(
         const allNative = await listMyCountryActiveBattles(ctx, csrf, countryId).catch(
           () => [] as Awaited<ReturnType<typeof listMyCountryActiveBattles>>,
         );
-        const d11native = allNative.filter((b) => b.division === 11);
+        const d11native = allNative.filter((b) => b.division === AIR_DIVISION);
         const cfg = settings.d4twAir;
 
         const hasEnergy =
@@ -436,14 +436,17 @@ async function runCycle(
           );
           if (t.success) {
             console.log(`[cycle] d4tw-air: traveled to native (cost=${t.costCC}cc)`);
-            await notifier.send(`🛫 traveled home (${t.costCC}cc) to fight D11 medal`);
+            await notifier.send(`🛫 d4tw-air: traveled to native country (${t.costCC}cc) for D11 battle`);
             // Refresh context — currentCountryId/region/CSRF changed
             ctxInfo = await extractCitizenContext(ctx, { refresh: true });
             csrf = ctxInfo.csrf;
             state.awaySince = null;
+          } else if (!t.attempted) {
+            console.log(`[cycle] d4tw-air: travel skipped: ${t.message}`);
+            await notifier.send(`⚠️ d4tw-air: travel skipped — ${t.message}`);
           } else {
-            console.log(`[cycle] d4tw-air: cannot travel home — ${t.message}`);
-            await notifier.send(`⚠️ d4tw-air: cannot travel home — ${t.message}`);
+            console.log(`[cycle] d4tw-air: travel failed: ${t.message}`);
+            await notifier.send(`❌ d4tw-air: travel failed — ${t.message}`);
           }
         }
       } catch (err) {
@@ -451,12 +454,17 @@ async function runCycle(
       }
     }
 
+    const maxBattlesForGate =
+      mode === 'd4tw-air' ? settings.d4twAir.maxBattlesPerSession :
+      mode === 'd4tw' ? settings.d4tw.maxBattlesPerSession :
+      settings.emptyDiv.maxBattlesPerSession;
+
     const decision = settings.farmEnabled
       ? decideFarming({
           weekly: fuel,
           poolEnergy: ctxInfo.energy ?? 0,
           fuelInInventory: fuelAtCycleStart,
-          maxBattlesPerSession: settings.emptyDiv.maxBattlesPerSession,
+          maxBattlesPerSession: maxBattlesForGate,
           minEnergyPerBattle,
         })
       : {

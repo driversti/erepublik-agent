@@ -22,6 +22,7 @@ import {
 export const ENERGY_PER_HIT = 10;
 export const MIN_DEPLOY_ENERGY = 30;
 export const AIRCRAFT_WEAPON_TYPE = 'aircraftWeapon'; // TODO: verify against live inventory JSON (plan §0b)
+export const AIR_DIVISION = 11;
 
 export interface MinEnergyInfo {
   strength: number | null;
@@ -112,7 +113,7 @@ async function runD4twAir(
 
   // ── Discovery ───────────────────────────────────────────────────────────
   const all: FarmableBattle[] = await listMyCountryActiveBattles(ctx, info.csrf, info.countryId);
-  const d11 = all.filter((c) => c.division === 11);
+  const d11 = all.filter((c) => c.division === AIR_DIVISION);
   if (d11.length === 0) {
     const msg = `d4tw-air: no D11 native battles (country=${info.countryId})`;
     console.log(`[d4tw-air] ${msg}`);
@@ -152,7 +153,7 @@ async function runD4twAir(
       ctx,
       info.csrf,
       battle.battleId,
-      11,
+      AIR_DIVISION,
       battle.battleZoneId,
       battle.zoneId,
       mySide,
@@ -210,7 +211,7 @@ async function runD4twAir(
               regionName: battle.regionName,
               invaderCountryId: battle.invaderId,
               defenderCountryId: battle.defenderId,
-              division: 11,
+              division: AIR_DIVISION,
             },
             msg,
           ),
@@ -227,7 +228,7 @@ async function runD4twAir(
 
     const sideCountryId = mySide === 'invader' ? battle.invaderId : battle.defenderId;
     const otherCountryId = mySide === 'invader' ? battle.defenderId : battle.invaderId;
-    const skin = inv.skinId ?? skinForDivision(11);
+    const skin = inv.skinId ?? skinForDivision(AIR_DIVISION);
 
     if (options.dryRun) {
       console.log('[d4tw-air]    (dry-run — no POST)');
@@ -279,7 +280,7 @@ async function runD4twAir(
               regionName: battle.regionName,
               invaderCountryId: battle.invaderId,
               defenderCountryId: battle.defenderId,
-              division: 11,
+              division: AIR_DIVISION,
             },
             msg,
           ),
