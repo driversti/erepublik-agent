@@ -37,8 +37,7 @@ import {
   type WinSummary,
 } from './types.js';
 import { pickBomb } from '../../tools/pickBomb.js';
-import { apiCall } from '../../transport/apiCall.js';
-import type { InventoryWeapon } from '../../tools/pickWeapon.js';
+import { loadInventory } from './inventory.js';
 import { loadSettings } from '../../ui/settingsStore.js';
 import {
   formatBattleFailureMessage,
@@ -58,16 +57,6 @@ function parseCsvIds(s: string | undefined): number[] {
     .split(',')
     .map((x) => Number(x.trim()))
     .filter((n) => Number.isInteger(n) && n > 0);
-}
-
-async function loadInventory(ctx: BrowserContext, csrf: string): Promise<InventoryWeapon[]> {
-  const { body } = await apiCall<Array<{ id?: string; items?: InventoryWeapon[] }>>(ctx, {
-    method: 'GET',
-    path: '/en/economy/inventory-json',
-    csrf,
-  });
-  const main = Array.isArray(body) ? body.find((c) => c.id === 'mainStorage') : undefined;
-  return main?.items ?? [];
 }
 
 const DEFAULTS = {
