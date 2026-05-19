@@ -1,5 +1,6 @@
 import { damagePerHit, FIREPOWER } from '../../tools/damageFormula.js';
 import { resolveWeapon, type InventoryWeapon } from './inventory.js';
+import type { FarmableBattle } from '../../tools/battles.js';
 
 export const ENERGY_PER_HIT = 10;
 export const MIN_DEPLOY_ENERGY = 30;
@@ -37,4 +38,22 @@ export function estimateMinEnergy(
 
   const hits = Math.ceil(cfg.targetDamageAttacker / dmg);
   return Math.max(hits * ENERGY_PER_HIT, MIN_DEPLOY_ENERGY);
+}
+
+/**
+ * Order battles for the d4tw-air strategy: native=invader (losing side) first,
+ * native=defender (fallback, higher damage target) second. Stable order
+ * within each bucket — preserves input order for deterministic behavior.
+ */
+export function orderByPreferredSide(
+  battles: readonly FarmableBattle[],
+  nativeCountryId: number,
+): FarmableBattle[] {
+  const invaders: FarmableBattle[] = [];
+  const defenders: FarmableBattle[] = [];
+  for (const b of battles) {
+    if (b.invaderId === nativeCountryId) invaders.push(b);
+    else if (b.defenderId === nativeCountryId) defenders.push(b);
+  }
+  return [...invaders, ...defenders];
 }

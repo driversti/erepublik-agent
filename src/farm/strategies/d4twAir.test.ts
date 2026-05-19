@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { estimateMinEnergy, type MinEnergyCfg } from './d4twAir.js';
+import { estimateMinEnergy, orderByPreferredSide, type MinEnergyCfg } from './d4twAir.js';
 import type { InventoryWeapon } from './inventory.js';
+import type { FarmableBattle } from '../../tools/battles.js';
 
 const cfg = {
   targetDamageAttacker: 30_000,
@@ -62,5 +63,51 @@ describe('estimateMinEnergy', () => {
     // hits for 30k = ceil(30000/780) = 39 → energy = 390
     const info = { strength: 10_000, airRankNumber: 10 };
     expect(estimateMinEnergy(info, { ...cfg, useWeapon: false }, [])).toBe(390);
+  });
+});
+
+const make = (id: number, invader: number, defender: number, division = 11): FarmableBattle =>
+  ({
+    battleId: id,
+    invaderId: invader,
+    defenderId: defender,
+    division,
+    battleZoneId: 0,
+    zoneId: 0,
+    regionName: `Region${id}`,
+    start: 0,
+    wallFor: 50,
+    wallDom: 50,
+    intensityScale: '',
+  } as FarmableBattle);
+
+describe('orderByPreferredSide', () => {
+  const nativeCountryId = 71;
+
+  it('puts native=invader battles before native=defender', () => {
+    const battles = [
+      make(1, 99, nativeCountryId),  // native = defender
+      make(2, nativeCountryId, 99),  // native = invader
+      make(3, 88, nativeCountryId),  // native = defender
+      make(4, nativeCountryId, 77),  // native = invader
+    ];
+    const out = orderByPreferredSide(battles, nativeCountryId).map((b) => b.battleId);
+    expect(out).toEqual([2, 4, 1, 3]);
+  });
+
+  it('returns invader-only list unchanged when no defender battles', () => {
+    const battles = [make(1, nativeCountryId, 99), make(2, nativeCountryId, 88)];
+    expect(orderByPreferredSide(battles, nativeCountryId).map((b) => b.battleId))
+      .toEqual([1, 2]);
+  });
+
+  it('returns defender-only list when no invader battles', () => {
+    const battles = [make(1, 99, nativeCountryId), make(2, 88, nativeCountryId)];
+    expect(orderByPreferredSide(battles, nativeCountryId).map((b) => b.battleId))
+      .toEqual([1, 2]);
+  });
+
+  it('returns empty list when no battles', () => {
+    expect(orderByPreferredSide([], nativeCountryId)).toEqual([]);
   });
 });
