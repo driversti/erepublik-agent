@@ -456,7 +456,12 @@ async function runCycle(
             // Refresh context — currentCountryId/region/CSRF changed
             ctxInfo = await extractCitizenContext(ctx, { refresh: true });
             csrf = ctxInfo.csrf;
-            state.awaySince = null;
+            state.awaySince =
+              ctxInfo.currentRegionId != null &&
+              ctxInfo.residenceRegionId != null &&
+              ctxInfo.currentRegionId !== ctxInfo.residenceRegionId
+                ? new Date().toISOString()
+                : null;
           } else if (!t.attempted) {
             console.log(`[cycle] d4tw-air: travel skipped: ${t.message}`);
             await notifier.send(`⚠️ d4tw-air: travel skipped — ${t.message}`);

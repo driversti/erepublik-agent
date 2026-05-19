@@ -137,7 +137,7 @@ async function runD4twAir(
   const cap = Math.min(cfg.maxBattlesPerSession, ordered.length);
   const wins: WinSummary[] = [];
   const skipped: SkipSummary[] = [];
-  let stopReason: StopReason = 'completed';
+  const stopReason: StopReason = 'completed';
   let lastFuel: number | null = null;
   let lastPoolEnergy: number | null = null;
 
@@ -323,7 +323,7 @@ async function runD4twAir(
           regionName: battle.regionName,
           invaderCountryId: battle.invaderId,
           defenderCountryId: battle.defenderId,
-          division: 11,
+          division: AIR_DIVISION,
         }),
       ),
     ).catch(() => undefined);
