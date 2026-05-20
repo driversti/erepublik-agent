@@ -22,7 +22,7 @@ import { escapeMdV2 } from '../telegram/mdV2.js';
 import { runAction } from './actions.js';
 import { runOvertimeIfEligible } from './runOvertime.js';
 import { runRewardSweeps } from './rewardSweeper.js';
-import { snapshotHash, formatDigest } from './digests.js';
+import { digestHash, formatDigest } from './digests.js';
 import { initAppEnvironment } from './appInit.js';
 import { defaultStateProviders, type StateProviders } from './stateProviders.js';
 import { reconcileSpentWithInventory } from '../memory/weeklyFuelState.js';
@@ -576,9 +576,12 @@ async function runCycle(
   uiSnapshot.lastFarmReason = lastDecisionReason;
   uiSnapshot.lastError = null;
 
-  const hash = snapshotHash(state, weekly, fuel);
+  // Hash the rendered text (not the raw state) so identical-looking digests
+  // don't get resent because of a flapping hidden field like `fuel.lastFarmedAt`
+  // or `state.awaySince`. Contract: same message → no resend.
+  const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget);
+  const hash = digestHash(digest);
   if (hash !== state.lastDigestHash) {
-    const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget);
     console.log('[cycle] digest:\n' + digest);
     await notifier.send(digest);
     state.lastDigestHash = hash;

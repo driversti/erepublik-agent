@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { snapshotHash, formatDigest } from './digests.js';
+import { digestHash, formatDigest } from './digests.js';
 import type { DailyState } from '../memory/schema.js';
 import type { WeeklyState } from '../memory/weeklyState.js';
 import type { WeeklyFuelState } from '../memory/weeklyFuelState.js';
@@ -38,42 +38,65 @@ function makeFuel(overrides: Partial<WeeklyFuelState> = {}): WeeklyFuelState {
   };
 }
 
-describe('snapshotHash', () => {
-  it('is stable across calls for the same inputs', () => {
-    const a = snapshotHash(makeState(), makeWeekly(), makeFuel());
-    const b = snapshotHash(makeState(), makeWeekly(), makeFuel());
-    expect(a).toBe(b);
+function digestFor(state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
+  return formatDigest(state.eRepublikDay, state, weekly, fuel, 70);
+}
+
+describe('digestHash', () => {
+  it('is stable across calls for the same digest text', () => {
+    const text = digestFor(makeState(), makeWeekly(), makeFuel());
+    expect(digestHash(text)).toBe(digestHash(text));
   });
 
-  it('changes when daily state changes meaningfully', () => {
-    const before = snapshotHash(makeState(), makeWeekly(), makeFuel());
-    const after = snapshotHash(
-      makeState({ claimedMissionIds: [1, 2] }),
-      makeWeekly(),
-      makeFuel(),
+  it('changes when the digest text differs (e.g. new claimed mission)', () => {
+    const before = digestHash(digestFor(makeState(), makeWeekly(), makeFuel()));
+    const after = digestHash(
+      digestFor(makeState({ claimedMissionIds: [1, 2] }), makeWeekly(), makeFuel()),
     );
     expect(after).not.toBe(before);
   });
 
-  it('ignores `lastDigestHash` field (avoids self-referential drift)', () => {
-    const a = snapshotHash(makeState({ lastDigestHash: 'aaaaaaaaaaaa' }), makeWeekly(), makeFuel());
-    const b = snapshotHash(makeState({ lastDigestHash: 'zzzzzzzzzzzz' }), makeWeekly(), makeFuel());
-    expect(a).toBe(b);
-  });
-
-  it('ignores `nextEligibleAt` + `cyclesSkipped` on fuel state', () => {
-    const a = snapshotHash(makeState(), makeWeekly(), makeFuel());
-    const b = snapshotHash(
-      makeState(),
-      makeWeekly(),
-      makeFuel({ nextEligibleAt: '2026-05-20T12:00:00Z', cyclesSkipped: 99 }),
+  // Regression: previously snapshotHash() included hidden state fields, so a
+  // fresh fuel.lastFarmedAt timestamp (set on every farm cycle, even zero-hit
+  // ones) flipped the hash and re-sent an identical-looking digest. By hashing
+  // the formatted text itself, hidden state shifts can never spam Telegram.
+  it('does NOT change when fuel.lastFarmedAt updates (hidden field)', () => {
+    const a = digestHash(digestFor(makeState(), makeWeekly(), makeFuel()));
+    const b = digestHash(
+      digestFor(makeState(), makeWeekly(), makeFuel({ lastFarmedAt: '2026-05-20T17:20:00Z' })),
     );
     expect(a).toBe(b);
   });
 
-  it('does change when fuel.spent shifts', () => {
-    const a = snapshotHash(makeState(), makeWeekly(), makeFuel({ spent: 10 }));
-    const b = snapshotHash(makeState(), makeWeekly(), makeFuel({ spent: 20 }));
+  it('does NOT change when state.awaySince flips between null and a timestamp', () => {
+    const a = digestHash(digestFor(makeState(), makeWeekly(), makeFuel()));
+    const b = digestHash(
+      digestFor(makeState({ awaySince: '2026-05-20T17:25:00Z' }), makeWeekly(), makeFuel()),
+    );
+    expect(a).toBe(b);
+  });
+
+  it('does NOT change when completedActions.work.at timestamp differs', () => {
+    const a = digestHash(
+      digestFor(
+        makeState({ completedActions: { work: { at: '2026-05-20T07:00:00Z', source: 'agent' } } }),
+        makeWeekly(),
+        makeFuel(),
+      ),
+    );
+    const b = digestHash(
+      digestFor(
+        makeState({ completedActions: { work: { at: '2026-05-20T17:39:00Z', source: 'agent' } } }),
+        makeWeekly(),
+        makeFuel(),
+      ),
+    );
+    expect(a).toBe(b);
+  });
+
+  it('does change when fuel.spent shifts (visible in digest)', () => {
+    const a = digestHash(digestFor(makeState(), makeWeekly(), makeFuel({ spent: 10 })));
+    const b = digestHash(digestFor(makeState(), makeWeekly(), makeFuel({ spent: 20 })));
     expect(a).not.toBe(b);
   });
 });

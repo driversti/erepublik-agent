@@ -4,21 +4,18 @@ import type { WeeklyState } from '../memory/weeklyState.js';
 import type { WeeklyFuelState } from '../memory/weeklyFuelState.js';
 
 /**
- * SHA-256 of an opinionated subset of cycle state used to decide whether a
- * Telegram digest is worth sending. We exclude diagnostic fields that flap
- * on every cycle (`lastDigestHash` is self-referential; `nextEligibleAt` and
- * `cyclesSkipped` change on every idle tick) — those would spam the chat
- * with no useful change.
+ * Hash the *formatted digest text* so we can detect "this looks identical to
+ * the last one we sent" without leaking hidden state into the decision.
+ *
+ * Previous design hashed an opinionated subset of the raw state — but it was
+ * still too inclusive: `fuel.lastFarmedAt` (re-stamped on every farm cycle,
+ * even zero-hit ones), `state.awaySince`, and the per-action `at` ISO strings
+ * all flapped without changing what the user sees in Telegram, which spammed
+ * the chat with the same digest over and over. Hashing the rendered text
+ * makes the contract self-evident: same message → no resend.
  */
-export function snapshotHash(
-  state: DailyState,
-  weekly: WeeklyState,
-  fuel: WeeklyFuelState,
-): string {
-  const { lastDigestHash: _ignored, ...stateForHash } = state;
-  const { nextEligibleAt: _ignored2, cyclesSkipped: _ignored3, ...fuelForHash } = fuel;
-  const data = JSON.stringify({ state: stateForHash, weekly, fuel: fuelForHash });
-  return createHash('sha256').update(data).digest('hex').slice(0, 12);
+export function digestHash(digestText: string): string {
+  return createHash('sha256').update(digestText).digest('hex').slice(0, 12);
 }
 
 /**
