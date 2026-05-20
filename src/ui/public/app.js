@@ -84,8 +84,9 @@ function renderStatus(s) {
   document.getElementById('daily-actions').innerHTML = [
     ['Work', da.work],
     ['Train', da.train],
-    ['Buy food', da.buyFood],
+    ['Overtime', da.workOvertime],
     ['VIP claim', da.vipClaim],
+    ['Buy food', da.buyFood],
   ]
     .map(([k, v]) => `<li>${v ? '✅' : '⏳'} ${k}</li>`)
     .join('');

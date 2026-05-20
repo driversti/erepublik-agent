@@ -32,6 +32,7 @@ export interface UiSnapshot {
     train: boolean;
     buyFood: boolean;
     vipClaim: boolean;
+    workOvertime: boolean;
   };
   /** From WeeklyFuelState — week-to-date pace numbers. */
   weeklyFuel: {
@@ -67,7 +68,7 @@ export function createSnapshot(): UiSnapshot {
       residenceRegionId: null,
       atHome: null,
     },
-    dailyActions: { work: false, train: false, buyFood: false, vipClaim: false },
+    dailyActions: { work: false, train: false, buyFood: false, vipClaim: false, workOvertime: false },
     weeklyFuel: { week: null, spent: 0, target: 0, hitsLanded: 0, cyclesSkipped: 0 },
     settings: null,
     lastError: null,
