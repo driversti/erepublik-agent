@@ -11,6 +11,7 @@ import {
   formatBattleFailureMessage,
   formatBattleSuccessMessage,
 } from '../../util/battleNotification.js';
+import { escapeMdV2 } from '../../telegram/mdV2.js';
 import type {
   FarmSessionInfo,
   FarmSessionOptions,
@@ -169,7 +170,7 @@ export async function runOneSidedCombat(
   if (info.strength == null || config.rank == null) {
     const msg = `${config.strategyId}: strength/rank unavailable — skipping cycle`;
     console.log(`${config.logPrefix} ${msg}`);
-    await Promise.resolve(options.notify?.(`⚠️ ${msg}`)).catch(() => undefined);
+    await Promise.resolve(options.notify?.(escapeMdV2(`⚠️ ${msg}`))).catch(() => undefined);
     return emptyResult(msg, 'no-candidates');
   }
   if (info.currentCountryId !== info.countryId) {

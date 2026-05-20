@@ -3,6 +3,7 @@ import type { DailyState } from '../memory/schema.js';
 import type { Settings } from '../ui/settingsStore.js';
 import { decideOvertime, type OvertimeDecision } from '../tools/workOvertime.policy.js';
 import { getJobData, workOvertime, type OvertimePostResult, type JobDataResponse } from '../tools/workOvertime.js';
+import { escapeMdV2 } from '../telegram/mdV2.js';
 
 /**
  * Single OT attempt for this cycle. Mutates `state` (sets
@@ -82,12 +83,12 @@ export async function runOvertimeIfEligible(
         const net = post.result?.netSalary ?? null;
         const cur = post.result?.currency ?? null;
         const tag = net != null && cur != null ? `+${net} ${cur}` : 'success';
-        await opts.notify(`💼 OT: ${tag}`);
+        await opts.notify(escapeMdV2(`💼 OT: ${tag}`));
         return { decision, post, netSalary: net, currency: cur };
       }
       // All client-side preconditions were clean → treat as cap.
       state.overtimeCapReachedAt = nowIso;
-      await opts.notify('⛔ overtime: employer cap reached — paused until day rollover');
+      await opts.notify(escapeMdV2('⛔ overtime: employer cap reached — paused until day rollover'));
       return { decision, post };
     }
 

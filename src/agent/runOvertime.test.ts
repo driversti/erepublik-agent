@@ -104,7 +104,8 @@ describe('runOvertimeIfEligible', () => {
       at: FIXED_NOW.toISOString(),
       source: 'agent',
     });
-    expect(cap.calls).toEqual(['💼 OT: +7425 LTL']);
+    // `+` is MarkdownV2-reserved → escaped at the boundary.
+    expect(cap.calls).toEqual(['💼 OT: \\+7425 LTL']);
   });
 
   it('go but clean-precondition failure → mark cap + alert', async () => {

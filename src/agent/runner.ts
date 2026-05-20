@@ -18,6 +18,7 @@ import { getMissionState } from '../tools/missions.js';
 import { getObjectiveStatus } from '../tools/objectives.js';
 import { getWeeklyChallenge } from '../tools/weekly.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
+import { escapeMdV2 } from '../telegram/mdV2.js';
 import { runAction } from './actions.js';
 import { runOvertimeIfEligible } from './runOvertime.js';
 import { runRewardSweeps } from './rewardSweeper.js';
@@ -360,7 +361,7 @@ async function runCycle(
           );
           if (t.success) {
             console.log(`[cycle] d4tw-air: traveled to native (cost=${t.costCC}cc)`);
-            await notifier.send(`🛫 d4tw-air: traveled to native country (${t.costCC}cc) for D11 battle`);
+            await notifier.send(escapeMdV2(`🛫 d4tw-air: traveled to native country (${t.costCC}cc) for D11 battle`));
             // Refresh context — currentCountryId/region/CSRF changed
             ctxInfo = await extractCitizenContext(ctx, { refresh: true });
             csrf = ctxInfo.csrf;
@@ -372,10 +373,10 @@ async function runCycle(
                 : null;
           } else if (!t.attempted) {
             console.log(`[cycle] d4tw-air: travel skipped: ${t.message}`);
-            await notifier.send(`⚠️ d4tw-air: travel skipped — ${t.message}`);
+            await notifier.send(escapeMdV2(`⚠️ d4tw-air: travel skipped — ${t.message}`));
           } else {
             console.log(`[cycle] d4tw-air: travel failed: ${t.message}`);
-            await notifier.send(`❌ d4tw-air: travel failed — ${t.message}`);
+            await notifier.send(escapeMdV2(`❌ d4tw-air: travel failed — ${t.message}`));
           }
         }
       } catch (err) {
@@ -511,14 +512,14 @@ async function runCycle(
                 `[cycle] returned home after ${elapsedMin.toFixed(0)}m abroad (cost=${costStr})`,
               );
               await notifier.send(
-                `🏠 returned home after ${elapsedMin.toFixed(0)}m abroad (cost=${costStr})`,
+                escapeMdV2(`🏠 returned home after ${elapsedMin.toFixed(0)}m abroad (cost=${costStr})`),
               );
             } else if (!r.attempted) {
               console.log(`[cycle] return-home skipped: ${r.message}`);
-              await notifier.send(`⚠️ return-home skipped: ${r.message}`);
+              await notifier.send(escapeMdV2(`⚠️ return-home skipped: ${r.message}`));
             } else {
               console.log(`[cycle] return-home failed: ${r.message}`);
-              await notifier.send(`❌ return-home failed: ${r.message}`);
+              await notifier.send(escapeMdV2(`❌ return-home failed: ${r.message}`));
             }
           } catch (err) {
             const msg = `[cycle] travelHome threw: ${(err as Error).message}`;

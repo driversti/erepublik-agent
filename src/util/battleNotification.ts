@@ -1,3 +1,4 @@
+import { escapeMdV2, mdV2Link } from '../telegram/mdV2.js';
 import { flagFor } from './countryFlag.js';
 
 export interface BattleNotificationInfo {
@@ -29,10 +30,12 @@ function battleUrl(battleId: number, battleZoneId: number): string {
 
 /** Renders the country-vs-country header used in both success and failure messages. */
 function header(info: BattleNotificationInfo): string {
-  const region = sanitizeForMarkdownLink(info.regionName);
+  const linkText = `#${info.battleId} ${info.regionName}`;
+  const link = mdV2Link(linkText, battleUrl(info.battleId, info.battleZoneId));
   const invFlag = flagFor(info.invaderCountryId);
   const defFlag = flagFor(info.defenderCountryId);
-  return `[#${info.battleId} ${region}](${battleUrl(info.battleId, info.battleZoneId)}) — ${invFlag} vs ${defFlag} · D${info.division}`;
+  // Em-dash and middle-dot aren't MarkdownV2-reserved; `D{n}` is just digits.
+  return `${link} — ${invFlag} vs ${defFlag} · D${info.division}`;
 }
 
 /**
@@ -55,14 +58,5 @@ export function formatBattleFailureMessage(
   reason: string,
 ): string {
   const trimmed = reason.length > 200 ? `${reason.slice(0, 200)}…` : reason;
-  return `⚠️ ${header(info)}\nFailed: ${trimmed}`;
-}
-
-/**
- * Strips characters that would break a Markdown `[text](url)` link. eRepublik
- * region names occasionally contain parentheses (e.g. "Region (East)"), which
- * legacy-Markdown parses incorrectly inside the link text.
- */
-function sanitizeForMarkdownLink(text: string): string {
-  return text.replace(/[\[\]()]/g, '');
+  return `⚠️ ${header(info)}\nFailed: ${escapeMdV2(trimmed)}`;
 }

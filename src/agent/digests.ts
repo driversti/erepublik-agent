@@ -34,8 +34,12 @@ export function formatDigest(
 ): string {
   const a = state.completedActions;
   const flag = (v: unknown) => (v ? '✅' : '⏳');
+  // Body fields are number/comma/em-dash only — none are MarkdownV2-reserved.
+  // The header dash and the literal "/" inside "23/140" need escaping (only
+  // the dash; "/" isn't reserved in MarkdownV2). The literal "*" pair is the
+  // bold delimiter and stays unescaped.
   return [
-    `*erepublik-agent* — day ${day}`,
+    `*erepublik\\-agent* — day ${day}`,
     `Work ${flag(a.work)}  Train ${flag(a.train)}  OT ${flag(a.workOvertime)}  VIP ${flag(a.vipClaim)}  Food ${flag(a.buyFood)}`,
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
