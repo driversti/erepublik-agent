@@ -52,6 +52,11 @@ const FarmSessionSettings = z
     path: ['cooldownMaxMinutes'],
   });
 
+const WorkOvertimeSettings = z.object({
+  enabled: z.boolean().default(true),
+  mode: z.enum(['once-per-day', 'when-available']).default('once-per-day'),
+});
+
 const DetectedState = z.object({
   division: z.number().int().nullable().default(null),
   hasMaverick: z.boolean().nullable().default(null),
@@ -111,6 +116,10 @@ export const Settings = z.object({
   farmSession: FarmSessionSettings.default(() => ({
     cooldownMinMinutes: 30,
     cooldownMaxMinutes: 90,
+  })),
+  workOvertime: WorkOvertimeSettings.default(() => ({
+    enabled: true,
+    mode: 'once-per-day' as const,
   })),
   detected: DetectedState.default(() => ({
     division: null,

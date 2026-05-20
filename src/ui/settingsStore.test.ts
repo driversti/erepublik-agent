@@ -198,3 +198,23 @@ describe('Settings d4twAir defaults', () => {
     expect(() => Settings.parse({ d4twAir: { maxBattlesPerSession: 11 } })).toThrow();
   });
 });
+
+describe('Settings.workOvertime', () => {
+  it('has feature enabled by default in once-per-day mode', () => {
+    expect(DEFAULT_SETTINGS.workOvertime.enabled).toBe(true);
+    expect(DEFAULT_SETTINGS.workOvertime.mode).toBe('once-per-day');
+  });
+
+  it('accepts both modes', () => {
+    const a = Settings.parse({ ...DEFAULT_SETTINGS, workOvertime: { enabled: true, mode: 'once-per-day' } });
+    const b = Settings.parse({ ...DEFAULT_SETTINGS, workOvertime: { enabled: true, mode: 'when-available' } });
+    expect(a.workOvertime.mode).toBe('once-per-day');
+    expect(b.workOvertime.mode).toBe('when-available');
+  });
+
+  it('rejects an unknown mode', () => {
+    expect(() =>
+      Settings.parse({ ...DEFAULT_SETTINGS, workOvertime: { enabled: true, mode: 'whenever-i-want' } }),
+    ).toThrow();
+  });
+});
