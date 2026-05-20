@@ -93,7 +93,8 @@ const CF_RESOLVE_TIMEOUT_MS = 30_000;
  * `extractCitizenContext` will capture the page state and produce a richer
  * error message if we landed somewhere unexpected.
  */
-async function waitForRenderedPage(page: Page): Promise<void> {
+async function waitForRenderedPage(page: Page): Promise<{ ok: boolean; elapsedMs: number }> {
+  const start = Date.now();
   try {
     await page.waitForFunction(
       () => {
@@ -109,8 +110,9 @@ async function waitForRenderedPage(page: Page): Promise<void> {
       },
       { timeout: CF_RESOLVE_TIMEOUT_MS },
     );
+    return { ok: true, elapsedMs: Date.now() - start };
   } catch {
-    // Timeout — caller's diagnostic CSRF branch logs page state.
+    return { ok: false, elapsedMs: Date.now() - start };
   }
 }
 
@@ -119,12 +121,13 @@ export async function extractCitizenContext(
   opts: ExtractOptions = {},
 ): Promise<CitizenContext> {
   const page = ctx.pages()[0] ?? (await ctx.newPage());
+  let waitResult: { ok: boolean; elapsedMs: number } | null = null;
   if (opts.refresh) {
     await page.goto(CAMPAIGNS_URL, { waitUntil: 'domcontentloaded' });
-    await waitForRenderedPage(page);
+    waitResult = await waitForRenderedPage(page);
   } else if (!page.url().startsWith('https://www.erepublik.com/en')) {
     await page.goto(FALLBACK_URL, { waitUntil: 'domcontentloaded' });
-    await waitForRenderedPage(page);
+    waitResult = await waitForRenderedPage(page);
   }
   if (page.url().includes('/login')) {
     throw new Error('Session expired — re-run bootstrap');
@@ -272,9 +275,12 @@ export async function extractCitizenContext(
       hasErepublikGlobal: typeof (globalThis as { erepublik?: unknown }).erepublik !== 'undefined',
     }));
     const snippet = diag.bodySnippet.replace(/\s+/g, ' ').trim().slice(0, 240);
+    const waitTag = waitResult
+      ? `wait=${waitResult.ok ? 'ok' : 'timeout'}/${waitResult.elapsedMs}ms`
+      : 'wait=skipped';
     throw new Error(
       `CSRF token not found — url=${page.url()} title="${diag.title}" ` +
-        `captcha=${diag.hasCaptchaOverlay} cf=${diag.hasCloudflareMarker} ` +
+        `${waitTag} captcha=${diag.hasCaptchaOverlay} cf=${diag.hasCloudflareMarker} ` +
         `serverData=${diag.hasServerData} erepublik=${diag.hasErepublikGlobal} ` +
         `body="${snippet}"`,
     );
