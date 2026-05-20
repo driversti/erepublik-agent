@@ -12,13 +12,14 @@ import type { BrowserContext } from 'playwright-core';
 import { openSession, extractCitizenContext } from '../browser/session.js';
 import { effectiveMode } from './modeSelector.js';
 import { eRepublikDay } from '../erepublik/day.js';
-import { allSafeDailyDone, pendingActions } from '../memory/schema.js';
+import { allSafeDailyDone, overtimeStillPending, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
 import { getObjectiveStatus } from '../tools/objectives.js';
 import { getWeeklyChallenge } from '../tools/weekly.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
 import { runAction } from './actions.js';
+import { runOvertimeIfEligible } from './runOvertime.js';
 import { runRewardSweeps } from './rewardSweeper.js';
 import { snapshotHash, formatDigest } from './digests.js';
 import { initAppEnvironment } from './appInit.js';
@@ -203,7 +204,8 @@ async function runCycle(
     allSafeDailyDone(state) &&
     unclaimedMissions.length === 0 &&
     unclaimedObjectives.length === 0 &&
-    !weeklyUnclaimed;
+    !weeklyUnclaimed &&
+    !overtimeStillPending(state, settings.workOvertime);
 
   try {
     if (shortCircuit) {
@@ -214,20 +216,47 @@ async function runCycle(
         `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}]`,
       );
 
-      // 1. Run pending safe-daily actions in a fixed order.
-      for (const action of pending) {
+      // 1. Run pending safe-daily actions in a fixed order. Explicit calls
+      //    (not a loop over `pending`) so the workOvertime orchestrator can
+      //    sit between `train` and `vipClaim` per the spec (R2). OT is not
+      //    a member of `ACTIVE_SAFE_DAILY_KEYS` because its retry semantics
+      //    in `when-available` mode don't fit the "set flag → never retry"
+      //    model the loop relies on.
+      const runActionOpts = {
+        autoEmploy: settings.autoEmploy,
+        maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
+        notify: (m: string) => notifier.send(m),
+      };
+      async function tryAction(action: import('../memory/schema.js').ActiveSafeDailyKey) {
+        if (!pending.includes(action)) return;
         try {
-          await runAction(action, ctx, csrf, countryId, state, {
-            autoEmploy: settings.autoEmploy,
-            maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
-            notify: (m) => notifier.send(m),
-          });
+          // countryId is guaranteed non-null here: the null-guard above throws
+          // before we reach this point, but TS can't narrow across async closures.
+          await runAction(action, ctx, csrf, countryId!, state, runActionOpts);
         } catch (err) {
           const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
           console.error(msg);
           bridge.emitLog('error', msg);
         }
       }
+
+      await tryAction('work');
+      await tryAction('train');
+
+      try {
+        const ot = await runOvertimeIfEligible(ctx, csrf, state, settings, {
+          notify: (m) => notifier.send(m),
+        });
+        console.log(`[cycle] workOvertime: ${ot.decision.kind}` +
+          (ot.netSalary != null ? ` (+${ot.netSalary} ${ot.currency})` : ''));
+      } catch (err) {
+        const msg = `[cycle] workOvertime threw: ${(err as Error).message}`;
+        console.error(msg);
+        bridge.emitLog('error', msg);
+      }
+
+      await tryAction('vipClaim');
+      await tryAction('buyFood');
 
       // 2. Idempotent sweeps — safe to call even when nothing is claimable.
       //    See `rewardSweeper.ts` for the per-sweep error isolation policy.
@@ -504,6 +533,7 @@ async function runCycle(
     train: !!state.completedActions.train,
     buyFood: !!state.completedActions.buyFood,
     vipClaim: !!state.completedActions.vipClaim,
+    workOvertime: !!state.completedActions.workOvertime,
   };
   uiSnapshot.weeklyFuel = {
     week: fuel.week,
