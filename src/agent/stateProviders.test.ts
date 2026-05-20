@@ -23,6 +23,7 @@ describe('StateProviders shape', () => {
           notifiedNoJobToday: false,
           lastDigestHash: null,
           awaySince: null,
+          overtimeCapReachedAt: null,
         },
         rolledOver: false,
       }),

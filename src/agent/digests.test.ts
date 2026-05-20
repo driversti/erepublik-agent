@@ -13,6 +13,7 @@ function makeState(overrides: Partial<DailyState> = {}): DailyState {
     lastDigestHash: null,
     awaySince: null,
     notifiedNoJobToday: false,
+    overtimeCapReachedAt: null,
     ...overrides,
   };
 }
