@@ -15,6 +15,8 @@ const PHASE_1_ALLOWLIST: readonly AllowEntry[] = [
   { method: 'POST', path: '/en/economy/marketplaceAjax' },
   { method: 'POST', path: '/en/economy/marketplaceActions' },
   { method: 'POST', path: '/en/economy/work' },
+  { method: 'GET', path: '/en/main/job-data' },
+  { method: 'POST', path: '/en/economy/workOvertime' },
   { method: 'GET', path: '/en/economy/job-market-json/' },
   { method: 'POST', path: '/en/economy/resign' },
   { method: 'POST', path: '/en/economy/job-market-apply' },
