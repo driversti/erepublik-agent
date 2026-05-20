@@ -67,7 +67,7 @@ export async function runAction(
   if (action === 'train') {
     const r = await train(ctx, csrf);
     if (r.success) state.completedActions.train = { at, source: 'agent' };
-    console.log(`[cycle] train: ${r.success ? '✅' : '❌'} status=${r.status}`);
+    console.log(`[cycle] train: ${r.success ? '✅' : '❌'} count=${r.count} status=${r.status}`);
     return;
   }
   if (action === 'vipClaim') {

@@ -1,15 +1,23 @@
 import type { BrowserContext } from 'playwright-core';
 import { apiCall } from '../transport/apiCall.js';
+import { selectGroundsToTrain } from './train.policy.js';
 
-interface TrainingGround {
+export interface TrainingGround {
   id: number;
-  trained?: boolean;
-  cost?: number;
-  hasContract?: boolean;
+  trained: boolean;
+  /** Static gold price for the building (informational only). */
+  cost: number;
+  /**
+   * Server-resolved price after level bonuses, training contract, anniversary
+   * events, etc. Source of truth for "is this free for me right now?".
+   */
+  effectiveCost: number;
 }
 
-interface TrainingGroundsResp {
-  grounds?: TrainingGround[];
+export interface TrainingGroundsResp {
+  grounds: TrainingGround[];
+  /** Top-level flag — `true` while the player holds an active training contract. */
+  hasTrainingContract: boolean;
 }
 
 export interface TrainResult {
@@ -21,15 +29,13 @@ export interface TrainResult {
 }
 
 export async function train(ctx: BrowserContext, csrf: string): Promise<TrainResult> {
-  const { body: groundsData } = await apiCall<TrainingGroundsResp>(ctx, {
+  const { body: resp } = await apiCall<TrainingGroundsResp>(ctx, {
     method: 'GET',
     path: '/en/main/training-grounds-json',
     csrf,
   });
 
-  const trainable = (groundsData.grounds ?? []).filter(
-    (g) => !g.trained && (g.cost === 0 || g.hasContract === true),
-  );
+  const trainable = selectGroundsToTrain(resp);
 
   if (trainable.length === 0) {
     return { success: true, alreadyTrained: true, count: 0 };
