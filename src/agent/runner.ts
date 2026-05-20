@@ -1,39 +1,29 @@
 import { config as loadDotenv } from 'dotenv';
 import { join } from 'node:path';
-import { writeFileSync, unlinkSync, createWriteStream } from 'node:fs';
-import { configDir, logsDir } from '../paths.js';
+import { configDir } from '../paths.js';
 
 loadDotenv({ path: join(configDir(), '.env') });
 // Fall back to default .env in cwd if config/.env wasn't found
 // (developer workflow). Dotenv silently ignores missing files.
 loadDotenv();
 
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { BrowserContext } from 'playwright-core';
 import { openSession, extractCitizenContext } from '../browser/session.js';
 import { effectiveMode } from './modeSelector.js';
 import { eRepublikDay } from '../erepublik/day.js';
-import { loadOrInit, save } from '../memory/dailyState.js';
-import { allSafeDailyDone, pendingActions, type DailyState } from '../memory/schema.js';
+import { allSafeDailyDone, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
-import { getObjectiveStatus, collectObjectiveRewards } from '../tools/objectives.js';
-import { getWeeklyChallenge, collectWeeklyChallenge } from '../tools/weekly.js';
-import { loadWeekly, saveWeekly, type WeeklyState } from '../memory/weeklyState.js';
+import { getObjectiveStatus } from '../tools/objectives.js';
+import { getWeeklyChallenge } from '../tools/weekly.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
-import { work } from '../tools/work.js';
-import { ensureEmployed } from '../tools/jobMarket.js';
-import { train } from '../tools/train.js';
-import { claimVip } from '../tools/vip.js';
-import { buyOneCheapestFood } from '../tools/market.js';
-import { collectMissionRewards } from '../tools/claim.js';
-import {
-  loadFuel,
-  reconcileSpentWithInventory,
-  saveFuel,
-  type WeeklyFuelState,
-} from '../memory/weeklyFuelState.js';
+import { runAction } from './actions.js';
+import { runRewardSweeps } from './rewardSweeper.js';
+import { snapshotHash, formatDigest } from './digests.js';
+import { initAppEnvironment } from './appInit.js';
+import { defaultStateProviders, type StateProviders } from './stateProviders.js';
+import { reconcileSpentWithInventory } from '../memory/weeklyFuelState.js';
 import { decideFarming, rollNextEligibleAt } from './fuelBudget.js';
 import { getStrategy } from '../farm/strategies/index.js';
 import { loadSettings, saveSettings } from '../ui/settingsStore.js';
@@ -61,142 +51,20 @@ const Env = z.object({
   ERP_CAPTCHA_PROVIDER: z.enum(['none', '2captcha']).default('none'),
   ERP_CAPTCHA_API_KEY: z.string().optional(),
   ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
-  // Auto return-home (ePlus returnHome parity). Travels back to residence
-  // once we've been observed outside it for at least N minutes (default 15,
-  // matching ePlus). 0 disables the feature.
-  ERP_RETURN_HOME_AFTER_MINUTES: z.coerce.number().int().min(0).default(15),
-  // Hard ceiling on the residence-trip cost (local CC). Travel is skipped +
-  // alerted when the pre-check returns a higher cost.
-  ERP_RETURN_HOME_MAX_CC: z.coerce.number().int().positive().default(500),
+  // ERP_RETURN_HOME_AFTER_MINUTES and ERP_RETURN_HOME_MAX_CC are seed-only:
+  // they populate `settings.travel.*` on first run (see `settingsStore.ts`).
+  // The runner reads from settings.json at runtime so UI edits take effect.
   ERP_FILE_LOGGING: z.enum(['true', 'false']).default('false'),
 });
 type Env = z.infer<typeof Env>;
 
 const env = Env.parse(process.env);
 
-// ── PID file + optional file logging ───────────────────────────────────────
-const pidPath = join(logsDir(), 'agent.pid');
-writeFileSync(pidPath, String(process.pid));
-
-const cleanupPid = (): void => {
-  try {
-    unlinkSync(pidPath);
-  } catch {
-    /* ignore */
-  }
-};
-process.on('exit', cleanupPid);
-// Both SIGINT and SIGTERM are handled by the graceful-shutdown handler later
-// in this file; they set `stopCtrl.requestStop()`, let the current cycle
-// finish, and exit cleanly — at which point our `exit` listener above fires
-// `cleanupPid()`.
-
-if (env.ERP_FILE_LOGGING === 'true') {
-  // Daily rotation matches the eRepublik day boundary the agent already uses.
-  // The runner re-reads the day each cycle; for logging we just use ISO date
-  // because operators reading logs think in calendar days, not game days.
-  const stamp = new Date().toISOString().slice(0, 10);
-  const stream = createWriteStream(join(logsDir(), `agent-${stamp}.log`), { flags: 'a' });
-
-  const origLog = console.log.bind(console);
-  const origErr = console.error.bind(console);
-  console.log = (...args: unknown[]) => {
-    origLog(...args);
-    stream.write(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
-  };
-  console.error = (...args: unknown[]) => {
-    origErr(...args);
-    stream.write('[ERR] ' + args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ') + '\n');
-  };
-}
+initAppEnvironment({ fileLoggingEnabled: env.ERP_FILE_LOGGING === 'true' });
 
 const args = new Set(process.argv.slice(2));
 const ONCE = args.has('--once');
 
-function snapshotHash(state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
-  const { lastDigestHash: _ignored, ...stateForHash } = state;
-  // nextEligibleAt jitters every session and cyclesSkipped increments every
-  // idle tick — both are diagnostics, not user-actionable state, so exclude
-  // them from the hash to avoid spamming Telegram every 10 minutes.
-  const { nextEligibleAt: _ignored2, cyclesSkipped: _ignored3, ...fuelForHash } = fuel;
-  const data = JSON.stringify({ state: stateForHash, weekly, fuel: fuelForHash });
-  return createHash('sha256').update(data).digest('hex').slice(0, 12);
-}
-
-function formatDigest(day: number, state: DailyState, weekly: WeeklyState, fuel: WeeklyFuelState): string {
-  const a = state.completedActions;
-  const flag = (v: unknown) => (v ? '✅' : '⏳');
-  return [
-    `*erepublik-agent* — day ${day}`,
-    `Work ${flag(a.work)}  Train ${flag(a.train)}  VIP ${flag(a.vipClaim)}  Food ${flag(a.buyFood)}`,
-    `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
-    `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
-    `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
-    `Fuel week ${fuel.week}: spent ${fuel.spent}/70, hits ${fuel.hitsLanded}, skipped ${fuel.cyclesSkipped}`,
-  ].join('\n');
-}
-
-async function runAction(
-  action: 'work' | 'train' | 'vipClaim' | 'buyFood',
-  ctx: BrowserContext,
-  csrf: string,
-  countryId: number,
-  state: DailyState,
-  opts: { autoEmploy: boolean; notify: (m: string) => Promise<void> },
-): Promise<void> {
-  const at = new Date().toISOString();
-  if (action === 'work') {
-    if (opts.autoEmploy) {
-      try {
-        const ensure = await ensureEmployed(ctx, csrf, countryId);
-        if (ensure.action === 'applied') {
-          state.notifiedNoJobToday = false;
-          const wage = ensure.netSalary ?? ensure.salary;
-          const msg =
-            `💼 auto-employ: hired by ${ensure.employerName} ` +
-            `for ${wage} ${ensure.currency ?? ''}`.trim();
-          console.log(`[cycle] ${msg}`);
-          await opts.notify(msg);
-        } else if (ensure.action === 'no_jobs' || ensure.action === 'foreign_country') {
-          const reason = ensure.reason ?? ensure.action;
-          console.log(`[cycle] work: skipped — ${reason}`);
-          if (!state.notifiedNoJobToday) {
-            await opts.notify(`⚠️ work skipped — ${reason}`);
-            state.notifiedNoJobToday = true;
-          }
-          return;
-        }
-      } catch (err) {
-        console.warn(`[cycle] ensureEmployed threw: ${(err as Error).message} — attempting work anyway`);
-      }
-    }
-    const r = await work(ctx, csrf);
-    if (r.success) state.completedActions.work = { at, source: 'agent' };
-    console.log(`[cycle] work: ${r.success ? '✅' : '❌'} status=${r.status}`);
-    return;
-  }
-  if (action === 'train') {
-    const r = await train(ctx, csrf);
-    if (r.success) state.completedActions.train = { at, source: 'agent' };
-    console.log(`[cycle] train: ${r.success ? '✅' : '❌'} status=${r.status}`);
-    return;
-  }
-  if (action === 'vipClaim') {
-    const r = await claimVip(ctx, csrf);
-    if (r.success) state.completedActions.vipClaim = { at, source: 'agent' };
-    console.log(`[cycle] vipClaim: ${r.success ? '✅' : '❌'}`);
-    return;
-  }
-  if (action === 'buyFood') {
-    const r = await buyOneCheapestFood(ctx, csrf, countryId, env.ERP_MAX_FOOD_PRICE);
-    if (r.success && r.offerId != null) {
-      state.completedActions.buyFood = { at, source: 'agent', offerId: r.offerId };
-    }
-    const tag = r.success ? `✅ @ ${r.price}` : `⏭  ${r.reason ?? 'failed'}`;
-    console.log(`[cycle] buyFood: ${tag}`);
-    return;
-  }
-}
 
 /**
  * Run one daily cycle. Uses the module-level `bridge` (electronBridge)
@@ -210,15 +78,16 @@ async function runCycle(
   notifier: TelegramNotifier,
   captchaCfg: CaptchaConfig,
   uiSnapshot: UiSnapshot,
+  providers: StateProviders = defaultStateProviders,
 ): Promise<void> {
   const day = eRepublikDay();
   uiSnapshot.lastCycleStartedAt = new Date().toISOString();
   uiSnapshot.day = day;
   let lastDecisionReason: string | null = null;
   let lastWeekFuelTarget = 0;
-  const { state, rolledOver } = loadOrInit(day);
-  const weekly = loadWeekly();
-  const { state: fuel, rolledOver: fuelRolled } = loadFuel();
+  const { state, rolledOver } = providers.loadDaily(day);
+  const weekly = providers.loadWeekly();
+  const { state: fuel, rolledOver: fuelRolled } = providers.loadFuel();
   console.log(
     `[cycle] day=${day}${rolledOver ? ' (rolled over)' : ''}` +
       `, fuel-week=${fuel.week}${fuelRolled ? ' (rolled over)' : ''}`,
@@ -350,6 +219,7 @@ async function runCycle(
         try {
           await runAction(action, ctx, csrf, countryId, state, {
             autoEmploy: settings.autoEmploy,
+            maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
             notify: (m) => notifier.send(m),
           });
         } catch (err) {
@@ -360,47 +230,14 @@ async function runCycle(
       }
 
       // 2. Idempotent sweeps — safe to call even when nothing is claimable.
-      try {
-        const m = await collectMissionRewards(ctx, csrf, state.claimedMissionIds);
-        for (const id of m.claimed) {
-          if (!state.claimedMissionIds.includes(id)) state.claimedMissionIds.push(id);
-        }
-        if (m.claimed.length || m.failed.length) {
-          console.log(`[cycle] missions sweep: claimed=[${m.claimed.join(', ')}] failed=${m.failed.length}`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectMissionRewards threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
-
-      try {
-        const o = await collectObjectiveRewards(ctx, csrf, state.claimedChestThresholds);
-        for (const cost of o.claimed) {
-          if (!state.claimedChestThresholds.includes(cost)) state.claimedChestThresholds.push(cost);
-        }
-        if (o.claimed.length || o.failed.length) {
-          console.log(`[cycle] objectives sweep: claimed=[${o.claimed.join(', ')}] failed=${o.failed.length}`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectObjectiveRewards threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
-
-      try {
-        const w = await collectWeeklyChallenge(ctx, csrf, weekly.lastClaimedRewardId);
-        if (w.claimed && w.maxRewardId != null) {
-          weekly.lastClaimedRewardId = w.maxRewardId;
-          console.log(`[cycle] weekly sweep: claimed up to ${w.maxRewardId}`);
-        } else if (w.reason) {
-          console.log(`[cycle] weekly sweep: noop (${w.reason})`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
+      //    See `rewardSweeper.ts` for the per-sweep error isolation policy.
+      await runRewardSweeps(ctx, csrf, state, weekly, {
+        log: (msg) => console.log(msg),
+        error: (msg) => {
+          console.error(msg);
+          bridge.emitLog('error', msg);
+        },
+      });
     }
 
     // ── Farm gate ─────────────────────────────────────────────────────────────
@@ -515,7 +352,8 @@ async function runCycle(
           poolEnergy: ctxInfo.energy ?? 0,
           fuelInInventory: fuelAtCycleStart,
           maxBattlesPerSession: maxBattlesForGate,
-          minEnergyPerBattle,
+          minEnergyPerBattle: minEnergyPerBattle ?? settings.energyPerBattleStandard,
+          weeklyBudget: settings.weeklyFuelBudget,
         })
       : {
           shouldFarm: false as const,
@@ -530,7 +368,7 @@ async function runCycle(
           },
         };
     lastDecisionReason = decision.reason;
-    lastWeekFuelTarget = Math.floor(70 * decision.diagnostics.weekFraction);
+    lastWeekFuelTarget = decision.diagnostics.target;
     console.log(
       `[cycle] farm: ${decision.shouldFarm ? '✅' : '⏭'} ${decision.reason} ` +
         `(week=${decision.diagnostics.weekFraction.toFixed(3)})`,
@@ -567,6 +405,7 @@ async function runCycle(
           },
           {
             maxBattles: decision.battlesThisSession,
+            maxTravelCC: settings.travel.maxTravelCC,
             notify: (m) => notifier.send(m),
             preloadedInventory,
           },
@@ -590,7 +429,7 @@ async function runCycle(
         console.log(
           `[cycle] farm session: stop=${result.stopReason}, wins=${result.wins.length}, ` +
             `consumed=${consumed} fuel (${fuelAtCycleStart}→${fuelAfter}), hits=${verifiedHits}, ` +
-            `weekly=${fuel.spent}/70`,
+            `weekly=${fuel.spent}/${settings.weeklyFuelBudget}`,
         );
       } catch (err) {
         const msg = `[cycle] farm session threw: ${(err as Error).message}`;
@@ -603,13 +442,17 @@ async function runCycle(
       // Idle cycle — good moment to head home if we've been abroad past the
       // threshold. Skipping when shouldFarm=true avoids paying for a round-trip
       // we'd immediately undo with the next farm session.
+      // Settings (UI-editable + .env-seedable on first run) drive this; the
+      // env vars are only consulted for the initial settings.json seed.
+      const returnHomeAfterMinutes = settings.travel.returnHomeAfterMinutes;
+      const returnHomeMaxCC = settings.travel.returnHomeMaxCC;
       if (
-        env.ERP_RETURN_HOME_AFTER_MINUTES > 0 &&
+        returnHomeAfterMinutes > 0 &&
         state.awaySince != null &&
         ctxInfo.residenceRegionId != null
       ) {
         const elapsedMin = (Date.now() - new Date(state.awaySince).getTime()) / 60_000;
-        if (elapsedMin >= env.ERP_RETURN_HOME_AFTER_MINUTES) {
+        if (elapsedMin >= returnHomeAfterMinutes) {
           const residenceCountryIdForHome = ctxInfo.residenceCountryId ?? countryId;
           try {
             const r = await travelHome(
@@ -617,7 +460,7 @@ async function runCycle(
               csrf,
               ctxInfo.residenceRegionId,
               residenceCountryIdForHome,
-              { maxCostCC: env.ERP_RETURN_HOME_MAX_CC },
+              { maxCostCC: returnHomeMaxCC },
             );
             if (r.success) {
               state.awaySince = null;
@@ -649,9 +492,9 @@ async function runCycle(
       );
     }
   } finally {
-    save(state);
-    saveWeekly(weekly);
-    saveFuel(fuel);
+    providers.saveDaily(state);
+    providers.saveWeekly(weekly);
+    providers.saveFuel(fuel);
   }
 
   uiSnapshot.lastUpdatedAt = Date.now();
@@ -691,11 +534,11 @@ async function runCycle(
 
   const hash = snapshotHash(state, weekly, fuel);
   if (hash !== state.lastDigestHash) {
-    const digest = formatDigest(day, state, weekly, fuel);
+    const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget);
     console.log('[cycle] digest:\n' + digest);
     await notifier.send(digest);
     state.lastDigestHash = hash;
-    save(state);
+    providers.saveDaily(state);
   }
 
   appendHistory({

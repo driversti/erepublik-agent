@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { sessionsDir } from '../paths.js';
+import { readTailBytes } from './readTail.js';
 
 export type HistoryEvent =
   | { type: 'cycle'; reason: string; at?: string }
@@ -24,12 +25,12 @@ export function tailHistory(n: number): HistoryEvent[] {
   const path = filePath();
   if (!existsSync(path)) return [];
   const stats = statSync(path);
-  const start = Math.max(0, stats.size - MAX_TAIL_BYTES);
+  const slicedMidFile = stats.size > MAX_TAIL_BYTES;
   // Byte-slice before decoding for emoji-safety (same lesson as logsTail).
-  const raw = readFileSync(path);
-  const tail = start === 0 ? raw : raw.subarray(start);
+  // Uses a positioned read so a multi-GB history doesn't slurp into memory.
+  const tail = readTailBytes(path, MAX_TAIL_BYTES);
   const lines = tail.toString('utf8').split('\n');
-  const safe = start === 0 ? lines : lines.slice(1); // drop possibly truncated first line
+  const safe = slicedMidFile ? lines.slice(1) : lines; // drop possibly truncated first line
   const parsed: HistoryEvent[] = [];
   for (const line of safe) {
     if (line.trim() === '') continue;

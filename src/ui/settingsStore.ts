@@ -12,6 +12,12 @@ const D4TWSettings = z.object({
   targetDamageDefender: z.number().int().positive().default(220_000_000),
   maxBattlesPerSession: z.number().int().min(1).max(10).default(1),
   weaponPriority: z.array(z.number().int().min(1).max(7)).default([7, 6, 5, 4, 3, 2, 1]),
+  /**
+   * Game minimum energy for a normal-weapon / bare-hands deploy in D4. Used
+   * as the floor when `hitsNeeded * energyPerHit` is lower. Hard-coded as 30
+   * by the eRepublik client; exposed here for emergency overrides only.
+   */
+  minDeployEnergy: z.number().int().min(1).default(30),
 });
 
 const D4TWAirSettings = z.object({
@@ -20,6 +26,8 @@ const D4TWAirSettings = z.object({
   maxBattlesPerSession: z.number().int().min(1).max(10).default(1),
   useWeapon: z.boolean().default(false),
   weaponPriority: z.array(z.number().int().min(1).max(5)).default([5, 4, 3, 2, 1]),
+  /** Same as D4TW.minDeployEnergy; documented inline for symmetry. */
+  minDeployEnergy: z.number().int().min(1).default(30),
 });
 
 const EmptyDivSettings = z.object({
@@ -61,11 +69,26 @@ export const Settings = z.object({
   autoEmploy: z.boolean().default(true),
   modeOverride: StrategyId.nullable().default(null),
   maverickManual: z.boolean().nullable().default(null),
+  /**
+   * Weekly cap on fuel barrels burned by the integrated farm gate. Default
+   * 70 matches spread-mode farming (D1-D3, level < 70). Lifts to ~140 for
+   * D11 air-only farming at level 70+. See [[fuel-economy]] in user memory.
+   */
+  weeklyFuelBudget: z.number().int().min(1).default(70),
+  /**
+   * Per-battle energy floor used by the Standard / empty-div strategy. The
+   * gate refuses to fight when `poolEnergy < energyPerBattleStandard`. Set
+   * to 66 because two Q-1 no-weapon hits cost 33 energy each, two sides.
+   * Strategies with different per-battle cost (d4tw-air ≈30) pass their own
+   * value via `decideFarming.minEnergyPerBattle`.
+   */
+  energyPerBattleStandard: z.number().int().min(1).default(66),
   d4tw: D4TWSettings.default(() => ({
     targetDamageAttacker: 130_000_000,
     targetDamageDefender: 220_000_000,
     maxBattlesPerSession: 1,
     weaponPriority: [7, 6, 5, 4, 3, 2, 1],
+    minDeployEnergy: 30,
   })),
   d4twAir: D4TWAirSettings.default(() => ({
     targetDamageAttacker: 30_000,
@@ -73,6 +96,7 @@ export const Settings = z.object({
     maxBattlesPerSession: 1,
     useWeapon: false,
     weaponPriority: [5, 4, 3, 2, 1],
+    minDeployEnergy: 30,
   })),
   emptyDiv: EmptyDivSettings.default(() => ({
     maxBattlesPerSession: 3,

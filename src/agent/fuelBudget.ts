@@ -53,6 +53,12 @@ export interface FarmInputs {
    * threshold would falsely reject a viable cycle.
    */
   minEnergyPerBattle?: number;
+  /**
+   * Override the weekly fuel budget (default 70). Sourced from
+   * `settings.weeklyFuelBudget` so operators can lift it for D11-air mode
+   * (level 70+) or trim it for cautious accounts without recompiling.
+   */
+  weeklyBudget?: number;
   /** Defaults to `new Date()` — pass explicit Date for tests. */
   now?: Date;
 }
@@ -79,12 +85,13 @@ export interface FarmDecision {
  */
 export function decideFarming(inputs: FarmInputs): FarmDecision {
   const now = inputs.now ?? new Date();
+  const weeklyBudget = inputs.weeklyBudget ?? WEEKLY_BUDGET;
 
   const weekFraction = weekElapsedFraction(now);
-  const target = Math.floor(WEEKLY_BUDGET * weekFraction);
+  const target = Math.floor(weeklyBudget * weekFraction);
   const spent = inputs.weekly.spent;
   const ahead = spent - target;
-  const remaining = WEEKLY_BUDGET - spent;
+  const remaining = weeklyBudget - spent;
 
   const diagnostics = { target, spent, ahead, remaining, weekFraction };
   const no = (reason: string): FarmDecision => ({
@@ -95,7 +102,7 @@ export function decideFarming(inputs: FarmInputs): FarmDecision {
   });
 
   // ── Hard stops ─────────────────────────────────────────────────────────────
-  if (remaining <= 0) return no(`weekly budget exhausted (${spent}/${WEEKLY_BUDGET})`);
+  if (remaining <= 0) return no(`weekly budget exhausted (${spent}/${weeklyBudget})`);
   if (inputs.fuelInInventory <= 0) return no('no fuel barrels in inventory');
   const minEnergy = inputs.minEnergyPerBattle ?? ENERGY_PER_BATTLE;
   if (inputs.poolEnergy < minEnergy) {

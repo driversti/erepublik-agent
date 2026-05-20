@@ -162,6 +162,7 @@ describe('Settings d4twAir defaults', () => {
       maxBattlesPerSession: 1,
       useWeapon: false,
       weaponPriority: [5, 4, 3, 2, 1],
+      minDeployEnergy: 30,
     });
   });
 
