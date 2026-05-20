@@ -312,22 +312,10 @@ export async function runOneSidedCombat(
           ? `have ${poolEnergy}e / ∞ hits`
           : `have ${poolEnergy}e / ${weapon.amountOnHand} units (≈${weapon.amountOnHand * weapon.usesPerUnit} hits)`;
       const msg = `${needPart}, ${havePart}`;
+      // Insufficient energy/ammo is a normal operating state, not an error —
+      // log it and record the skip locally, but do NOT push a Telegram notice
+      // (the operator doesn't want noise for routine resource shortfalls).
       console.log(`${config.logPrefix} skipped battle ${battle.battleId} (${battle.regionName}) — ${msg}`);
-      await Promise.resolve(
-        options.notify?.(
-          formatBattleFailureMessage(
-            {
-              battleId: battle.battleId,
-              battleZoneId: battle.battleZoneId,
-              regionName: battle.regionName,
-              invaderCountryId: battle.invaderId,
-              defenderCountryId: battle.defenderId,
-              division: config.division,
-            },
-            msg,
-          ),
-        ),
-      ).catch(() => undefined);
       skipped.push({ battleId: battle.battleId, regionName: battle.regionName, reason: msg });
       continue;
     }
