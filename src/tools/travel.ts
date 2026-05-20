@@ -83,7 +83,20 @@ export async function travelHome(
     const region = body.regions?.[String(residenceRegionId)];
     const c = typeof region?.cost === 'number' ? region.cost : null;
     costCC = c;
-    if (c != null && c > opts.maxCostCC) {
+    if (c == null) {
+      // Caller explicitly opted into a budget check by passing `maxCostCC` —
+      // refusing here is the only way to honour that contract when the API
+      // doesn't report a cost for our residence region (could be region
+      // occupied, country at war, server hiccup, etc.). Proceeding blindly
+      // would silently bypass the budget.
+      return {
+        attempted: false,
+        success: false,
+        costCC: null,
+        message: `could not determine travel cost to region ${residenceRegionId}`,
+      };
+    }
+    if (c > opts.maxCostCC) {
       return {
         attempted: false,
         success: false,

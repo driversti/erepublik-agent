@@ -51,13 +51,9 @@ const Env = z.object({
   ERP_CAPTCHA_PROVIDER: z.enum(['none', '2captcha']).default('none'),
   ERP_CAPTCHA_API_KEY: z.string().optional(),
   ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
-  // Auto return-home (ePlus returnHome parity). Travels back to residence
-  // once we've been observed outside it for at least N minutes (default 15,
-  // matching ePlus). 0 disables the feature.
-  ERP_RETURN_HOME_AFTER_MINUTES: z.coerce.number().int().min(0).default(15),
-  // Hard ceiling on the residence-trip cost (local CC). Travel is skipped +
-  // alerted when the pre-check returns a higher cost.
-  ERP_RETURN_HOME_MAX_CC: z.coerce.number().int().positive().default(500),
+  // ERP_RETURN_HOME_AFTER_MINUTES and ERP_RETURN_HOME_MAX_CC are seed-only:
+  // they populate `settings.travel.*` on first run (see `settingsStore.ts`).
+  // The runner reads from settings.json at runtime so UI edits take effect.
   ERP_FILE_LOGGING: z.enum(['true', 'false']).default('false'),
 });
 type Env = z.infer<typeof Env>;
@@ -442,6 +438,7 @@ async function runCycle(
           },
           {
             maxBattles: decision.battlesThisSession,
+            maxTravelCC: settings.travel.maxTravelCC,
             notify: (m) => notifier.send(m),
             preloadedInventory,
           },
@@ -478,13 +475,17 @@ async function runCycle(
       // Idle cycle — good moment to head home if we've been abroad past the
       // threshold. Skipping when shouldFarm=true avoids paying for a round-trip
       // we'd immediately undo with the next farm session.
+      // Settings (UI-editable + .env-seedable on first run) drive this; the
+      // env vars are only consulted for the initial settings.json seed.
+      const returnHomeAfterMinutes = settings.travel.returnHomeAfterMinutes;
+      const returnHomeMaxCC = settings.travel.returnHomeMaxCC;
       if (
-        env.ERP_RETURN_HOME_AFTER_MINUTES > 0 &&
+        returnHomeAfterMinutes > 0 &&
         state.awaySince != null &&
         ctxInfo.residenceRegionId != null
       ) {
         const elapsedMin = (Date.now() - new Date(state.awaySince).getTime()) / 60_000;
-        if (elapsedMin >= env.ERP_RETURN_HOME_AFTER_MINUTES) {
+        if (elapsedMin >= returnHomeAfterMinutes) {
           const residenceCountryIdForHome = ctxInfo.residenceCountryId ?? countryId;
           try {
             const r = await travelHome(
@@ -492,7 +493,7 @@ async function runCycle(
               csrf,
               ctxInfo.residenceRegionId,
               residenceCountryIdForHome,
-              { maxCostCC: env.ERP_RETURN_HOME_MAX_CC },
+              { maxCostCC: returnHomeMaxCC },
             );
             if (r.success) {
               state.awaySince = null;
