@@ -160,6 +160,26 @@
         </span>
       </div>
       <div class="bg-gray-50 rounded p-3 text-sm mt-4">
+        <div class="font-medium mb-2">Overtime</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="ot-enabled" type="checkbox" class="h-4 w-4">
+            <span>Enabled</span>
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Mode</span>
+            <select id="ot-mode" class="border rounded px-2 py-1 text-sm">
+              <option value="once-per-day">Once per day</option>
+              <option value="when-available">When available</option>
+            </select>
+          </label>
+        </div>
+        <p class="text-xs text-gray-600 mt-2">
+          ⓘ <strong>Once per day</strong>: work overtime once when available each game day.
+          <strong>When available</strong>: work overtime every cycle it's available.
+        </p>
+      </div>
+      <div class="bg-gray-50 rounded p-3 text-sm mt-4">
         <div class="font-medium mb-2">Farm session cooldown</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label class="flex flex-col">
