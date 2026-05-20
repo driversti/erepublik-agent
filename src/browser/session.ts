@@ -1,5 +1,5 @@
 import { launchPersistentContext } from 'cloakbrowser';
-import type { BrowserContext } from 'playwright-core';
+import type { BrowserContext, Page } from 'playwright-core';
 import { profileDir as resolveProfileDir } from '../paths.js';
 import { apiCall } from '../transport/apiCall.js';
 
@@ -76,6 +76,44 @@ export interface ExtractOptions {
 const CAMPAIGNS_URL = 'https://www.erepublik.com/en/military/campaigns';
 const FALLBACK_URL = 'https://www.erepublik.com/en';
 
+/**
+ * Time we allow Cloudflare's challenge to resolve into the real page.
+ * Observed CF challenges typically clear in 3–8s; 30s gives slack for the
+ * worst case before we fall through to the diagnostic CSRF-missing branch.
+ */
+const CF_RESOLVE_TIMEOUT_MS = 30_000;
+
+/**
+ * Wait for the page to settle into a known terminal state: either the real
+ * eRepublik DOM (CSRF meta or `SERVER_DATA.csrfToken` populated) or a login
+ * redirect. Resolves quickly on healthy pages; absorbs the few seconds CF
+ * needs to redirect away from the "Just a moment..." intermediate.
+ *
+ * Silently swallows the timeout — the diagnostic branch in
+ * `extractCitizenContext` will capture the page state and produce a richer
+ * error message if we landed somewhere unexpected.
+ */
+async function waitForRenderedPage(page: Page): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const meta = document
+          .querySelector('meta[name="csrf-token"]')
+          ?.getAttribute('content');
+        const sd = (window as unknown as { SERVER_DATA?: { csrfToken?: string } })
+          .SERVER_DATA;
+        if ((meta && meta.length > 0) || (sd?.csrfToken && sd.csrfToken.length > 0)) {
+          return true;
+        }
+        return window.location.pathname.includes('/login');
+      },
+      { timeout: CF_RESOLVE_TIMEOUT_MS },
+    );
+  } catch {
+    // Timeout — caller's diagnostic CSRF branch logs page state.
+  }
+}
+
 export async function extractCitizenContext(
   ctx: BrowserContext,
   opts: ExtractOptions = {},
@@ -83,8 +121,10 @@ export async function extractCitizenContext(
   const page = ctx.pages()[0] ?? (await ctx.newPage());
   if (opts.refresh) {
     await page.goto(CAMPAIGNS_URL, { waitUntil: 'domcontentloaded' });
+    await waitForRenderedPage(page);
   } else if (!page.url().startsWith('https://www.erepublik.com/en')) {
     await page.goto(FALLBACK_URL, { waitUntil: 'domcontentloaded' });
+    await waitForRenderedPage(page);
   }
   if (page.url().includes('/login')) {
     throw new Error('Session expired — re-run bootstrap');
@@ -210,7 +250,35 @@ export async function extractCitizenContext(
     };
   });
 
-  if (!info.csrf) throw new Error('CSRF token not found');
+  if (!info.csrf) {
+    // Collect a snapshot of what the page actually looks like when CSRF is
+    // missing. Common culprits we want to tell apart:
+    //   - Cloudflare challenge intermediate (CF markers in body)
+    //   - eRepublik session-unlock captcha overlay (#startSessionVerify)
+    //   - Silent logout (URL is /en or /main, no SERVER_DATA)
+    //   - Stripped/maintenance page (empty body, generic title)
+    // The runner logs the error message verbatim, so embedding the snapshot
+    // here means we see it without a separate logging path.
+    const diag = await page.evaluate(() => ({
+      title: document.title || '',
+      bodySnippet: (document.body?.innerText ?? '').slice(0, 500),
+      hasCaptchaOverlay:
+        !!document.getElementById('startSessionVerify') ||
+        !!document.getElementById('captchaImage'),
+      hasCloudflareMarker:
+        !!document.querySelector('#cf-wrapper, .cf-error-overview, #challenge-form') ||
+        /Just a moment|Checking your browser|Cloudflare/i.test(document.title || ''),
+      hasServerData: typeof (globalThis as { SERVER_DATA?: unknown }).SERVER_DATA !== 'undefined',
+      hasErepublikGlobal: typeof (globalThis as { erepublik?: unknown }).erepublik !== 'undefined',
+    }));
+    const snippet = diag.bodySnippet.replace(/\s+/g, ' ').trim().slice(0, 240);
+    throw new Error(
+      `CSRF token not found — url=${page.url()} title="${diag.title}" ` +
+        `captcha=${diag.hasCaptchaOverlay} cf=${diag.hasCloudflareMarker} ` +
+        `serverData=${diag.hasServerData} erepublik=${diag.hasErepublikGlobal} ` +
+        `body="${snippet}"`,
+    );
+  }
 
   let strength: number | null = null;
   let rankNumber: number | null = null;
