@@ -36,7 +36,7 @@ export function formatDigest(
   const flag = (v: unknown) => (v ? '✅' : '⏳');
   return [
     `*erepublik-agent* — day ${day}`,
-    `Work ${flag(a.work)}  Train ${flag(a.train)}  VIP ${flag(a.vipClaim)}  Food ${flag(a.buyFood)}`,
+    `Work ${flag(a.work)}  Train ${flag(a.train)}  OT ${flag(a.workOvertime)}  VIP ${flag(a.vipClaim)}  Food ${flag(a.buyFood)}`,
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
