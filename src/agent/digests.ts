@@ -40,6 +40,6 @@ export function formatDigest(
     `Missions claimed: ${state.claimedMissionIds.join(', ') || '—'}`,
     `Chests claimed: ${state.claimedChestThresholds.join(', ') || '—'}`,
     `Weekly maxRewardId: ${weekly.lastClaimedRewardId ?? '—'}`,
-    `Fuel week ${fuel.week}: spent ${fuel.spent}/${weeklyFuelBudget}, hits ${fuel.hitsLanded}, skipped ${fuel.cyclesSkipped}`,
+    `Fuel week ${fuel.week}: spent ${fuel.spent}/${weeklyFuelBudget}, hits ${fuel.hitsLanded}`,
   ].join('\n');
 }
