@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { processResponse } from './apiCall.js';
+import { processResponse, withTimeout, ApiTimeoutError } from './apiCall.js';
 import { ForbiddenError } from './errors.js';
 
 describe('processResponse', () => {
@@ -54,5 +54,38 @@ describe('processResponse', () => {
       expect((e as ForbiddenError).endpoint).toContain('/en/military/foo');
       expect((e as ForbiddenError).endpoint).toContain('POST');
     }
+  });
+});
+
+describe('withTimeout', () => {
+  it('resolves with the inner promise value when it finishes first', async () => {
+    const value = await withTimeout(Promise.resolve(42), 1000, 'op');
+    expect(value).toBe(42);
+  });
+
+  it('rejects with ApiTimeoutError when the inner promise stalls past the deadline', async () => {
+    const stall = new Promise<number>(() => {
+      /* never resolves */
+    });
+    await expect(withTimeout(stall, 50, 'POST /en/military/foo')).rejects.toBeInstanceOf(
+      ApiTimeoutError,
+    );
+  });
+
+  it('includes the operation label in the timeout error message', async () => {
+    const stall = new Promise<number>(() => undefined);
+    try {
+      await withTimeout(stall, 50, 'POST /en/military/foo');
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiTimeoutError);
+      expect((e as ApiTimeoutError).message).toContain('POST /en/military/foo');
+      expect((e as ApiTimeoutError).message).toContain('50');
+    }
+  });
+
+  it('propagates rejection from the inner promise unchanged', async () => {
+    const fail = Promise.reject(new Error('inner fail'));
+    await expect(withTimeout(fail, 1000, 'op')).rejects.toThrow('inner fail');
   });
 });

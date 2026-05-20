@@ -15,11 +15,11 @@ import { eRepublikDay } from '../erepublik/day.js';
 import { allSafeDailyDone, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
-import { getObjectiveStatus, collectObjectiveRewards } from '../tools/objectives.js';
-import { getWeeklyChallenge, collectWeeklyChallenge } from '../tools/weekly.js';
+import { getObjectiveStatus } from '../tools/objectives.js';
+import { getWeeklyChallenge } from '../tools/weekly.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
-import { collectMissionRewards } from '../tools/claim.js';
 import { runAction } from './actions.js';
+import { runRewardSweeps } from './rewardSweeper.js';
 import { snapshotHash, formatDigest } from './digests.js';
 import { initAppEnvironment } from './appInit.js';
 import { defaultStateProviders, type StateProviders } from './stateProviders.js';
@@ -230,47 +230,14 @@ async function runCycle(
       }
 
       // 2. Idempotent sweeps — safe to call even when nothing is claimable.
-      try {
-        const m = await collectMissionRewards(ctx, csrf, state.claimedMissionIds);
-        for (const id of m.claimed) {
-          if (!state.claimedMissionIds.includes(id)) state.claimedMissionIds.push(id);
-        }
-        if (m.claimed.length || m.failed.length) {
-          console.log(`[cycle] missions sweep: claimed=[${m.claimed.join(', ')}] failed=${m.failed.length}`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectMissionRewards threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
-
-      try {
-        const o = await collectObjectiveRewards(ctx, csrf, state.claimedChestThresholds);
-        for (const cost of o.claimed) {
-          if (!state.claimedChestThresholds.includes(cost)) state.claimedChestThresholds.push(cost);
-        }
-        if (o.claimed.length || o.failed.length) {
-          console.log(`[cycle] objectives sweep: claimed=[${o.claimed.join(', ')}] failed=${o.failed.length}`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectObjectiveRewards threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
-
-      try {
-        const w = await collectWeeklyChallenge(ctx, csrf, weekly.lastClaimedRewardId);
-        if (w.claimed && w.maxRewardId != null) {
-          weekly.lastClaimedRewardId = w.maxRewardId;
-          console.log(`[cycle] weekly sweep: claimed up to ${w.maxRewardId}`);
-        } else if (w.reason) {
-          console.log(`[cycle] weekly sweep: noop (${w.reason})`);
-        }
-      } catch (err) {
-        const msg = `[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`;
-        console.error(msg);
-        bridge.emitLog('error', msg);
-      }
+      //    See `rewardSweeper.ts` for the per-sweep error isolation policy.
+      await runRewardSweeps(ctx, csrf, state, weekly, {
+        log: (msg) => console.log(msg),
+        error: (msg) => {
+          console.error(msg);
+          bridge.emitLog('error', msg);
+        },
+      });
     }
 
     // ── Farm gate ─────────────────────────────────────────────────────────────

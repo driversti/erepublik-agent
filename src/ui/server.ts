@@ -114,55 +114,61 @@ function handleRunNow(_req: IncomingMessage, res: ServerResponse): void {
   }
 }
 
+type Handler = (req: IncomingMessage, res: ServerResponse, url: string, opts: StartOptions) => void | Promise<void>;
+type Method = 'GET' | 'POST' | 'PUT';
+
+interface Route {
+  method: Method;
+  path: string;
+  handler: Handler;
+}
+
+/**
+ * Route table. Method+path is matched exactly. Two-pass dispatch in `handle()`
+ * distinguishes "unknown path → 404" from "known path, wrong verb → 405" so
+ * callers get the precise status the existing test suite asserts. Adding a new
+ * endpoint is a single-line entry here — no more nested `if` ladder to read
+ * through.
+ */
+const ROUTES: Route[] = [
+  // Dashboards / static assets (default = dashboard-minimal)
+  { method: 'GET', path: '/', handler: (_req, res) => sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8') },
+  { method: 'GET', path: '/console', handler: (_req, res) => sendStatic(res, 'dashboard-console.html', 'text/html; charset=utf-8') },
+  { method: 'GET', path: '/tabs', handler: (_req, res) => sendStatic(res, 'dashboard-tabs.html', 'text/html; charset=utf-8') },
+  { method: 'GET', path: '/minimal', handler: (_req, res) => sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8') },
+  { method: 'GET', path: '/legacy', handler: (_req, res) => sendStatic(res, 'index.html', 'text/html; charset=utf-8') },
+  { method: 'GET', path: '/app.js', handler: (_req, res) => sendStatic(res, 'app.js', 'application/javascript; charset=utf-8') },
+  { method: 'GET', path: '/styles.css', handler: (_req, res) => sendStatic(res, 'styles.css', 'text/css; charset=utf-8') },
+
+  // JSON API
+  { method: 'GET', path: '/api/status', handler: (_req, res, _url, opts) => sendJson(res, 200, opts.getSnapshot()) },
+  { method: 'GET', path: '/api/settings', handler: (_req, res) => {
+    try {
+      sendJson(res, 200, loadSettings());
+    } catch (err) {
+      sendJson(res, 500, { error: (err as Error).message });
+    }
+  } },
+  { method: 'PUT', path: '/api/settings', handler: (req, res) => handlePutSettings(req, res) },
+  { method: 'GET', path: '/api/logs', handler: (_req, res, url) =>
+    sendJson(res, 200, { lines: tailLog(parseLinesParam(url)) }) },
+  { method: 'GET', path: '/api/history', handler: (_req, res, url) =>
+    sendJson(res, 200, { events: tailHistory(parseLinesParam(url)) }) },
+  { method: 'POST', path: '/api/run-now', handler: (req, res) => handleRunNow(req, res) },
+];
+
 function handle(req: IncomingMessage, res: ServerResponse, opts: StartOptions): void {
   const url = req.url ?? '/';
-  const method = req.method ?? 'GET';
+  const method = (req.method ?? 'GET') as Method;
+  const path = url.split('?')[0]; // strip query string
 
-  // Strip query string for path-matching.
-  const path = url.split('?')[0];
-
-  if (method === 'PUT' && path === '/api/settings') {
-    return void handlePutSettings(req, res);
-  }
-  if (method === 'POST' && path === '/api/run-now') {
-    return handleRunNow(req, res);
-  }
-  if (path === '/api/run-now') {
-    // POST is the only verb; GET / PUT / DELETE etc. → 405.
-    res.writeHead(405).end('Method not allowed');
+  const exactMatch = ROUTES.find((r) => r.method === method && r.path === path);
+  if (exactMatch) {
+    void exactMatch.handler(req, res, url, opts);
     return;
   }
-  if (method !== 'GET') {
-    res.writeHead(405).end('Method not allowed');
-    return;
-  }
-
-  if (path === '/') return sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8');
-  if (path === '/console') return sendStatic(res, 'dashboard-console.html', 'text/html; charset=utf-8');
-  if (path === '/tabs') return sendStatic(res, 'dashboard-tabs.html', 'text/html; charset=utf-8');
-  if (path === '/minimal') return sendStatic(res, 'dashboard-minimal.html', 'text/html; charset=utf-8');
-  if (path === '/legacy') return sendStatic(res, 'index.html', 'text/html; charset=utf-8');
-  if (path === '/app.js') return sendStatic(res, 'app.js', 'application/javascript; charset=utf-8');
-  if (path === '/styles.css') return sendStatic(res, 'styles.css', 'text/css; charset=utf-8');
-
-  if (path === '/api/status') return sendJson(res, 200, opts.getSnapshot());
-  if (path === '/api/settings') {
-    try {
-      return sendJson(res, 200, loadSettings());
-    } catch (err) {
-      return sendJson(res, 500, { error: (err as Error).message });
-    }
-  }
-  if (path === '/api/logs') {
-    const lines = parseLinesParam(url);
-    return sendJson(res, 200, { lines: tailLog(lines) });
-  }
-  if (path === '/api/history') {
-    const lines = parseLinesParam(url);
-    return sendJson(res, 200, { events: tailHistory(lines) });
-  }
-
-  res.writeHead(404).end('Not found');
+  const pathExists = ROUTES.some((r) => r.path === path);
+  res.writeHead(pathExists ? 405 : 404).end(pathExists ? 'Method not allowed' : 'Not found');
 }
 
 async function listen(server: Server, port: number, host: string): Promise<void> {
