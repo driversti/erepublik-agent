@@ -47,4 +47,27 @@ describe('resolveDoubleSidedOpts', () => {
     const cfg = resolveDoubleSidedOpts({ maxBattles: 1, notify } as FarmSessionOptions);
     expect(cfg.notify).toBe(notify);
   });
+
+  it('defaults interBattleSleepMs to 5000 and honors env + opts overrides', () => {
+    delete process.env.ERP_FARM_INTER_BATTLE_SLEEP_MS;
+    expect(
+      resolveDoubleSidedOpts({ maxBattles: 1 } as FarmSessionOptions).interBattleSleepMs,
+    ).toBe(5000);
+
+    process.env.ERP_FARM_INTER_BATTLE_SLEEP_MS = '7500';
+    try {
+      expect(
+        resolveDoubleSidedOpts({ maxBattles: 1 } as FarmSessionOptions).interBattleSleepMs,
+      ).toBe(7500);
+      // opts override beats env
+      expect(
+        resolveDoubleSidedOpts({
+          maxBattles: 1,
+          interBattleSleepMs: 2000,
+        } as FarmSessionOptions).interBattleSleepMs,
+      ).toBe(2000);
+    } finally {
+      delete process.env.ERP_FARM_INTER_BATTLE_SLEEP_MS;
+    }
+  });
 });

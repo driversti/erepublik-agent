@@ -68,6 +68,7 @@ const DEFAULTS = {
   handoffSleepMs: 2000,
   travelBRetryAttempts: 3,
   travelBRetryDelayMs: 1500,
+  interBattleSleepMs: 5000,
 };
 
 function sleep(ms: number): Promise<void> {
@@ -116,6 +117,9 @@ export function resolveDoubleSidedOpts(opts: FarmSessionOptions) {
     travelBRetryDelayMs:
       opts.travelBRetryDelayMs ??
       envNum('ERP_FARM_TRAVEL_B_RETRY_DELAY_MS', DEFAULTS.travelBRetryDelayMs),
+    interBattleSleepMs:
+      opts.interBattleSleepMs ??
+      envNum('ERP_FARM_INTER_BATTLE_SLEEP_MS', DEFAULTS.interBattleSleepMs),
     notify: opts.notify,
   };
 }
@@ -459,6 +463,7 @@ export async function runDoubleSidedCombat(
     };
   }
 
+  let iterationCount = 0;
   while (remaining.length > 0) {
     if (farmedCount >= cfg.maxBattles) {
       stopReason = 'max-battles';
@@ -472,6 +477,13 @@ export async function runDoubleSidedCombat(
       stopReason = 'low-energy';
       break;
     }
+    // eRepublik enforces a ~3s server-side travel cooldown; pause between
+    // battle iterations so back-to-back hops don't trigger "Travelling too
+    // fast". Skip on the first iteration (no prior travel to wait on).
+    if (iterationCount > 0 && cfg.interBattleSleepMs > 0) {
+      await sleep(cfg.interBattleSleepMs);
+    }
+    iterationCount++;
 
     const picked = await pickNext(routing, remaining, {
       getTravel: (battleId, fromRegionId, toCountryId) =>

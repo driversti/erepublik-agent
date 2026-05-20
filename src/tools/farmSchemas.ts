@@ -48,11 +48,17 @@ export const RawDeployResponseSchema = z
     error: z.boolean(),
     message: z.string().optional(),
     deploymentId: z.number().optional(),
+    // `data` is `null` on legitimate deploy failures (e.g. "not enough energy",
+    // "already fighting", "wall already conquered"). Must accept null — the
+    // caller is null-safe via `parsed.data?.fuelLeft` — otherwise normal
+    // error responses get rejected as schema violations and bypass the
+    // retry/verify recovery path in deployWithRetry.
     data: z
       .object({
         fuelLeft: z.number().optional(),
       })
       .passthrough()
+      .nullable()
       .optional(),
   })
   .passthrough();

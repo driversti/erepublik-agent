@@ -72,6 +72,18 @@ describe('RawDeployResponseSchema', () => {
     expect(r.success).toBe(true);
   });
 
+  it('accepts a failed deploy response where data is explicitly null', () => {
+    // Real-world eRepublik shape on failures (e.g. "wall already conquered",
+    // "not enough energy"). Rejecting this used to throw a misleading
+    // "API format changed" and bypass the retry/verify recovery path.
+    const r = RawDeployResponseSchema.safeParse({
+      error: true,
+      message: 'Wall already conquered',
+      data: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
   it('rejects responses missing the required `error` flag', () => {
     expect(RawDeployResponseSchema.safeParse({ message: 'hi' }).success).toBe(false);
   });

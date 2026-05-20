@@ -47,6 +47,13 @@ export interface FarmSessionOptions {
   /** Retry budget for the side-B travel hop (medal-critical). */
   travelBRetryAttempts?: number;
   travelBRetryDelayMs?: number;
+  /**
+   * Sleep between battle iterations. Avoids the server's ~3s travel
+   * rate-limit ("Travelling too fast. Try again in 3 second(s).") when one
+   * battle's last travel and the next battle's first travel fire back-to-back.
+   * Skipped on the first iteration.
+   */
+  interBattleSleepMs?: number;
   /** Optional notifier — invoked on partial-battle (side A landed, side B failed). */
   notify?: (msg: string) => void | Promise<void>;
 }
