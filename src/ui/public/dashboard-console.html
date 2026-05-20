@@ -444,6 +444,21 @@
         <p class="hint" id="run-now-hint">Wakes the runner immediately if it's sleeping.</p>
 
         <div class="subcard">
+          <h3>Overtime</h3>
+          <div class="grid-2">
+            <label class="inline"><input id="ot-enabled" type="checkbox"> Enabled</label>
+            <label class="field">
+              <span>Mode</span>
+              <select id="ot-mode">
+                <option value="once-per-day">Once per day</option>
+                <option value="when-available">When available</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint"><strong>Once per day</strong>: work overtime once when available each game day. <strong>When available</strong>: work overtime every cycle it's available.</p>
+        </div>
+
+        <div class="subcard">
           <h3>Farm session cooldown</h3>
           <div class="grid-2">
             <label class="field"><span>Min minutes between sessions</span><input id="cooldown-min" type="number" min="0"></label>
