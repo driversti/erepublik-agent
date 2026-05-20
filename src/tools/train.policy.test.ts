@@ -98,4 +98,14 @@ describe('selectGroundsToTrain', () => {
     expect(selectGroundsToTrain(resp([], false))).toEqual([]);
     expect(selectGroundsToTrain(resp([], true))).toEqual([]);
   });
+
+  it('returns [] when Weights already done and no contract (paid grounds stay locked)', () => {
+    const r = resp([
+      ground({ id: 1, trained: true, cost: 0, effectiveCost: 0 }),
+      ground({ id: 2, trained: false, cost: 0.19, effectiveCost: 0.19 }),
+      ground({ id: 3, trained: false, cost: 0.89, effectiveCost: 0.89 }),
+      ground({ id: 4, trained: false, cost: 1.79, effectiveCost: 1.79 }),
+    ]);
+    expect(selectGroundsToTrain(r)).toEqual([]);
+  });
 });
