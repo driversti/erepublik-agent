@@ -24,13 +24,15 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
-function setBar(textId, barId, current, max) {
+function setBar(textIds, barId, current, max) {
+  const ids = Array.isArray(textIds) ? textIds : [textIds];
   if (current == null || max == null || max <= 0) {
-    setText(textId, '—');
+    ids.forEach((id) => setText(id, '—'));
     document.getElementById(barId).style.width = '0%';
     return;
   }
-  setText(textId, `${current} / ${max}`);
+  const txt = `${current} / ${max}`;
+  ids.forEach((id) => setText(id, txt));
   document.getElementById(barId).style.width = `${Math.min(100, (current / max) * 100)}%`;
 }
 
@@ -77,8 +79,8 @@ function renderStatus(s) {
     .map(([k, v]) => `<dt class="text-gray-500">${esc(k)}</dt><dd>${esc(v)}</dd>`)
     .join('');
 
-  setBar('energy-text', 'energy-bar', s.citizen.energy, s.citizen.energyPoolLimit);
-  setBar('fuel-text', 'fuel-bar', s.citizen.fuelLeft, s.citizen.maxFuel);
+  setBar(['energy-text', 'energy-bar-text'], 'energy-bar', s.citizen.energy, s.citizen.energyPoolLimit);
+  setBar(['fuel-text', 'fuel-bar-text'], 'fuel-bar', s.citizen.fuelLeft, s.citizen.maxFuel);
 
   const da = s.dailyActions;
   document.getElementById('daily-actions').innerHTML = [
