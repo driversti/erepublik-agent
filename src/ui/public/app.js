@@ -84,8 +84,9 @@ function renderStatus(s) {
   document.getElementById('daily-actions').innerHTML = [
     ['Work', da.work],
     ['Train', da.train],
-    ['Buy food', da.buyFood],
+    ['Overtime', da.workOvertime],
     ['VIP claim', da.vipClaim],
+    ['Buy food', da.buyFood],
   ]
     .map(([k, v]) => `<li>${v ? '✅' : '⏳'} ${k}</li>`)
     .join('');
@@ -236,6 +237,22 @@ function bindControls() {
     s.farmSession = s.farmSession || {};
     s.farmSession.cooldownMaxMinutes = Number(e.target.value);
   }));
+  const otEnabled = document.getElementById('ot-enabled');
+  if (otEnabled)
+    otEnabled.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.workOvertime = s.workOvertime || {};
+        s.workOvertime.enabled = e.target.checked;
+      }),
+    );
+  const otMode = document.getElementById('ot-mode');
+  if (otMode)
+    otMode.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.workOvertime = s.workOvertime || {};
+        s.workOvertime.mode = e.target.value;
+      }),
+    );
 }
 
 function bindRunNowButton() {
@@ -305,6 +322,10 @@ function renderSettingsForm(s) {
   if (cdMin && document.activeElement !== cdMin) cdMin.value = String(s.farmSession?.cooldownMinMinutes ?? 30);
   const cdMax = document.getElementById('cooldown-max');
   if (cdMax && document.activeElement !== cdMax) cdMax.value = String(s.farmSession?.cooldownMaxMinutes ?? 90);
+  const otEnabled = document.getElementById('ot-enabled');
+  if (otEnabled && document.activeElement !== otEnabled) otEnabled.checked = !!s.workOvertime?.enabled;
+  const otMode = document.getElementById('ot-mode');
+  if (otMode && document.activeElement !== otMode) otMode.value = s.workOvertime?.mode ?? 'once-per-day';
 }
 
 bindControls();

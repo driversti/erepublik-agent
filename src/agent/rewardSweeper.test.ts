@@ -16,6 +16,7 @@ function emptyDaily(): DailyState {
     notifiedNoJobToday: false,
     lastDigestHash: null,
     awaySince: null,
+    overtimeCapReachedAt: null,
   };
 }
 

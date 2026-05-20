@@ -13,6 +13,7 @@ function makeState(overrides: Partial<DailyState> = {}): DailyState {
     lastDigestHash: null,
     awaySince: null,
     notifiedNoJobToday: false,
+    overtimeCapReachedAt: null,
     ...overrides,
   };
 }
@@ -94,6 +95,7 @@ describe('formatDigest', () => {
     expect(out).toContain('day 150');
     expect(out).toContain('Work ✅');
     expect(out).toContain('Train ✅');
+    expect(out).toContain('OT ⏳');
     expect(out).toContain('VIP ⏳');
     expect(out).toContain('Food ⏳');
   });
@@ -107,5 +109,12 @@ describe('formatDigest', () => {
     const out = formatDigest(1, makeState(), makeWeekly(), makeFuel(), 70);
     expect(out).toContain('Missions claimed: —');
     expect(out).toContain('Chests claimed: —');
+  });
+
+  it('shows OT ✅ when workOvertime is recorded', () => {
+    const state = makeState();
+    state.completedActions.workOvertime = { at: '2026-05-20T08:00:00Z', source: 'agent' };
+    expect(formatDigest(state.eRepublikDay, state, makeWeekly(), makeFuel(), 70))
+      .toContain('OT ✅');
   });
 });
