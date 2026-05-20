@@ -50,4 +50,36 @@ describe('resolveWeapon', () => {
     const r = resolveWeapon(inv, [5, 4, 3]);
     expect(r.quality).toBe(5);
   });
+
+  describe('usesPerUnit (durability)', () => {
+    it('reports Q5 groundWeapon as 5 uses per unit', () => {
+      const inv: InventoryWeapon[] = [{ type: 'groundWeapon', quality: 5, amount: 10 }];
+      const r = resolveWeapon(inv, [5]);
+      expect(r.usesPerUnit).toBe(5);
+    });
+
+    it('reports Q7 groundWeapon as 10 uses per unit (the only non-linear step)', () => {
+      const inv: InventoryWeapon[] = [{ type: 'groundWeapon', quality: 7, amount: 10 }];
+      const r = resolveWeapon(inv, [7]);
+      expect(r.usesPerUnit).toBe(10);
+    });
+
+    it('reports Q5 airWeapon as 5 uses per unit', () => {
+      const inv: InventoryWeapon[] = [{ type: 'airWeapon', quality: 5, amount: 10 }];
+      const r = resolveWeapon(inv, [5], 'airWeapon');
+      expect(r.usesPerUnit).toBe(5);
+    });
+
+    it('reports groundBomb as 1 use per unit regardless of quality field', () => {
+      const inv: InventoryWeapon[] = [{ type: 'groundBomb', quality: 5, amount: 3 }];
+      const r = resolveWeapon(inv, [5], 'groundBomb');
+      expect(r.usesPerUnit).toBe(1);
+    });
+
+    it('reports bare hands as 1 use per unit (with Infinity ammo)', () => {
+      const r = resolveWeapon([], [7, 6, 5, 4, 3, 2, 1]);
+      expect(r.usesPerUnit).toBe(1);
+      expect(r.amountOnHand).toBe(Number.POSITIVE_INFINITY);
+    });
+  });
 });

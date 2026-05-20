@@ -29,7 +29,23 @@ export interface ResolvedWeapon {
   firepower: number;
   /** Ammo on hand (Infinity for bare hands). */
   amountOnHand: number;
+  /**
+   * Hits delivered per inventory unit (a.k.a. durability).
+   * groundWeapon: Q1..Q6 = 1..6, Q7 = 10.
+   * airWeapon:   Q1..Q5 = 1..5 (no higher tier exists).
+   * groundBomb:  always 1 (each bomb is a single-deploy projectile).
+   * bare hands:  1 (paired with `amountOnHand = Infinity`).
+   */
+  usesPerUnit: number;
 }
+
+type WeaponType = 'groundWeapon' | 'airWeapon' | 'groundBomb';
+
+const DURABILITY: Record<WeaponType, Record<number, number>> = {
+  groundWeapon: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 10 },
+  airWeapon: { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 },
+  groundBomb: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1 },
+};
 
 /**
  * Pick the best available weapon of `weaponType` from `inventory` according
@@ -38,7 +54,7 @@ export interface ResolvedWeapon {
 export function resolveWeapon(
   inventory: readonly InventoryWeapon[],
   priority: readonly number[],
-  weaponType: 'groundWeapon' | 'airWeapon' | 'groundBomb' = 'groundWeapon',
+  weaponType: WeaponType = 'groundWeapon',
 ): ResolvedWeapon {
   const picked = pickWeapon(inventory, priority, weaponType);
   if (!picked) {
@@ -46,6 +62,7 @@ export function resolveWeapon(
       quality: -1,
       firepower: FIREPOWER.bare,
       amountOnHand: Number.POSITIVE_INFINITY,
+      usesPerUnit: 1,
     };
   }
   const fpKey = `Q${picked.quality}` as keyof typeof FIREPOWER;
@@ -53,6 +70,7 @@ export function resolveWeapon(
     quality: picked.quality,
     firepower: FIREPOWER[fpKey],
     amountOnHand: picked.amount,
+    usesPerUnit: DURABILITY[weaponType][picked.quality] ?? 1,
   };
 }
 

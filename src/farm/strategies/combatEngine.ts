@@ -97,19 +97,34 @@ export interface DeployPlanInput {
   energyPerHit: number;
   minDeployEnergy: number;
   ammoOnHand: number; // Infinity for bare hands / unlimited
+  /**
+   * Hits delivered per inventory unit (a.k.a. durability).
+   * 1 unit of Q5 ground = 5 hits; Q7 ground = 10 hits; Q5 air = 5 hits; bomb = 1.
+   * Defaults to 1 for backward compatibility with callers that pre-date the
+   * durability fix.
+   */
+  usesPerUnit?: number;
 }
 
 export interface DeployPlan {
   hitsNeeded: number;
+  /** Inventory units we'd actually consume (ceil(hitsNeeded / usesPerUnit)). */
+  unitsNeeded: number;
   energyToSpend: number;
   ammoOk: boolean;
 }
 
 export function computeDeployPlan(input: DeployPlanInput): DeployPlan {
+  const usesPerUnit = input.usesPerUnit ?? 1;
   const hitsNeeded = Math.ceil(input.targetDamage / input.damagePerHit);
+  const unitsNeeded = Math.ceil(hitsNeeded / usesPerUnit);
   const energyToSpend = Math.max(hitsNeeded * input.energyPerHit, input.minDeployEnergy);
-  const ammoOk = input.ammoOnHand === Number.POSITIVE_INFINITY || input.ammoOnHand >= hitsNeeded;
-  return { hitsNeeded, energyToSpend, ammoOk };
+  const hitsAvailable =
+    input.ammoOnHand === Number.POSITIVE_INFINITY
+      ? Number.POSITIVE_INFINITY
+      : input.ammoOnHand * usesPerUnit;
+  const ammoOk = hitsAvailable >= hitsNeeded;
+  return { hitsNeeded, unitsNeeded, energyToSpend, ammoOk };
 }
 
 /**
@@ -193,7 +208,12 @@ export async function runOneSidedCombat(
   const inventory = options.preloadedInventory ?? (await loadInventory(ctx, info.csrf));
   const weapon = config.useWeapon
     ? resolveWeapon(inventory, config.weaponPriority, config.weaponType)
-    : { quality: -1, firepower: FIREPOWER.bare, amountOnHand: Number.POSITIVE_INFINITY };
+    : {
+        quality: -1,
+        firepower: FIREPOWER.bare,
+        amountOnHand: Number.POSITIVE_INFINITY,
+        usesPerUnit: 1,
+      };
 
   // Formula-based damage estimate — used only for startup logging AND as a
   // graceful fallback when the server response is missing this weapon quality.
@@ -278,12 +298,20 @@ export async function runOneSidedCombat(
       energyPerHit,
       minDeployEnergy: config.minDeployEnergy,
       ammoOnHand: weapon.amountOnHand,
+      usesPerUnit: weapon.usesPerUnit,
     });
 
     if (poolEnergy < plan.energyToSpend || !plan.ammoOk) {
-      const msg =
-        `need ${plan.energyToSpend}e + ${plan.hitsNeeded} ammo, have ${poolEnergy}e / ` +
-        `${weapon.amountOnHand === Number.POSITIVE_INFINITY ? '∞' : weapon.amountOnHand} ammo`;
+      const weaponTag = weapon.quality === -1 ? 'bare hands' : `Q${weapon.quality}`;
+      const needPart =
+        weapon.quality === -1
+          ? `need ${plan.energyToSpend}e + ${plan.hitsNeeded} hits (${weaponTag})`
+          : `need ${plan.energyToSpend}e + ${plan.hitsNeeded} hits (${plan.unitsNeeded} units of ${weaponTag})`;
+      const havePart =
+        weapon.amountOnHand === Number.POSITIVE_INFINITY
+          ? `have ${poolEnergy}e / ∞ hits`
+          : `have ${poolEnergy}e / ${weapon.amountOnHand} units (≈${weapon.amountOnHand * weapon.usesPerUnit} hits)`;
+      const msg = `${needPart}, ${havePart}`;
       console.log(`${config.logPrefix} skipped battle ${battle.battleId} (${battle.regionName}) — ${msg}`);
       await Promise.resolve(
         options.notify?.(

@@ -50,6 +50,78 @@ describe('computeDeployPlan', () => {
     });
     expect(plan.ammoOk).toBe(true);
   });
+
+  describe('usesPerUnit (durability)', () => {
+    // 1820 / 10 = 182 hits needed. With Q5 air (usesPerUnit=5),
+    // 40 units carry 200 hits → sufficient; 30 units carry 150 → insufficient.
+    it('multiplies ammoOnHand by usesPerUnit when checking sufficiency', () => {
+      const plan = computeDeployPlan({
+        targetDamage: 1820,
+        damagePerHit: 10,
+        energyPerHit: 10,
+        minDeployEnergy: 30,
+        ammoOnHand: 40,
+        usesPerUnit: 5,
+      });
+      expect(plan.hitsNeeded).toBe(182);
+      expect(plan.unitsNeeded).toBe(37); // ceil(182 / 5)
+      expect(plan.ammoOk).toBe(true);
+    });
+
+    it('marks insufficient when ammoOnHand * usesPerUnit < hitsNeeded', () => {
+      const plan = computeDeployPlan({
+        targetDamage: 1820,
+        damagePerHit: 10,
+        energyPerHit: 10,
+        minDeployEnergy: 30,
+        ammoOnHand: 30,
+        usesPerUnit: 5,
+      });
+      expect(plan.hitsNeeded).toBe(182);
+      expect(plan.unitsNeeded).toBe(37);
+      expect(plan.ammoOk).toBe(false);
+    });
+
+    it('treats Q7 ground (10 uses/unit) correctly', () => {
+      // 100 hits needed, 10 units of Q7 = 100 hits → exactly enough.
+      const plan = computeDeployPlan({
+        targetDamage: 1000,
+        damagePerHit: 10,
+        energyPerHit: 10,
+        minDeployEnergy: 30,
+        ammoOnHand: 10,
+        usesPerUnit: 10,
+      });
+      expect(plan.hitsNeeded).toBe(100);
+      expect(plan.unitsNeeded).toBe(10);
+      expect(plan.ammoOk).toBe(true);
+    });
+
+    it('defaults usesPerUnit to 1 when omitted (backward-compatible)', () => {
+      // No usesPerUnit field — same behavior as before the fix.
+      const plan = computeDeployPlan({
+        targetDamage: 1000,
+        damagePerHit: 100,
+        energyPerHit: 10,
+        minDeployEnergy: 30,
+        ammoOnHand: 5,
+      });
+      expect(plan.hitsNeeded).toBe(10);
+      expect(plan.ammoOk).toBe(false);
+    });
+
+    it('Infinity ammo stays sufficient regardless of usesPerUnit', () => {
+      const plan = computeDeployPlan({
+        targetDamage: 1e9,
+        damagePerHit: 100,
+        energyPerHit: 10,
+        minDeployEnergy: 30,
+        ammoOnHand: Number.POSITIVE_INFINITY,
+        usesPerUnit: 1,
+      });
+      expect(plan.ammoOk).toBe(true);
+    });
+  });
 });
 
 describe('buildOneSidedWin', () => {
