@@ -247,8 +247,21 @@ async function runCycle(
         const ot = await runOvertimeIfEligible(ctx, csrf, state, settings, {
           notify: (m) => notifier.send(m),
         });
-        console.log(`[cycle] workOvertime: ${ot.decision.kind}` +
-          (ot.netSalary != null ? ` (+${ot.netSalary} ${ot.currency})` : ''));
+        // `go` decision means we POSTed; the orchestrator differentiates
+        // success vs. clean-precondition-failure ("cap"). Surface that here
+        // so operators can tell the two apart from the log alone, plus the
+        // server-side message on failure for diagnostic.
+        let tag: string = ot.decision.kind;
+        if (ot.decision.kind === 'go') {
+          if (ot.post?.success) {
+            tag = ot.netSalary != null
+              ? `✅ +${ot.netSalary} ${ot.currency}`
+              : '✅ success';
+          } else {
+            tag = `⛔ cap (msg=${ot.post?.message ?? 'n/a'})`;
+          }
+        }
+        console.log(`[cycle] workOvertime: ${tag}`);
       } catch (err) {
         const msg = `[cycle] workOvertime threw: ${(err as Error).message}`;
         console.error(msg);

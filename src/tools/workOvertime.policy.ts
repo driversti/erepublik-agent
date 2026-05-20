@@ -48,6 +48,15 @@ export type OvertimeDecision =
 
 const MIN_POINTS = 24;
 const MIN_ENERGY = 10;
+/**
+ * Extra seconds to wait past `nextOverTime` before considering the cooldown
+ * elapsed. Prevents a client clock running a few seconds ahead of the server
+ * from triggering a POST while the server still considers cooldown active —
+ * which would cost 100 energy (anti-spam penalty, see kb/Work_Overtime.md)
+ * and produce a `status: false` response that the orchestrator would
+ * mis-interpret as an employer cap.
+ */
+const COOLDOWN_BUFFER_SEC = 10;
 
 export function decideOvertime(input: OvertimePolicyInput): OvertimeDecision {
   const { jobOverTime, state, settings, nowSec } = input;
@@ -64,7 +73,7 @@ export function decideOvertime(input: OvertimePolicyInput): OvertimeDecision {
 
   if (jobOverTime == null) return { kind: 'skip-not-employed' };
 
-  const cooldownActive = jobOverTime.nextOverTime > nowSec;
+  const cooldownActive = jobOverTime.nextOverTime + COOLDOWN_BUFFER_SEC > nowSec;
   if (cooldownActive) {
     // Cooldown observed AND flag unset → someone else (player / other bot) did
     // OT recently. Mark external so the UI/digest reflect reality. The

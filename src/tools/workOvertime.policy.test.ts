@@ -61,10 +61,19 @@ describe('decideOvertime', () => {
     expect(d).toEqual({ kind: 'skip-cooldown', untilSec: NOW + 100, flagAlreadySet: true });
   });
 
-  it('cooldown elapsed (nextOverTime == now)', () => {
+  it('cooldown elapsed well past buffer (nextOverTime + buffer < now)', () => {
     expect(decideOvertime(input({
-      jobOverTime: { points: 1000, usableEnergy: 500, nextOverTime: NOW },
+      jobOverTime: { points: 1000, usableEnergy: 500, nextOverTime: NOW - 100 },
     }))).toEqual({ kind: 'go' });
+  });
+
+  it('cooldown elapsed but still within buffer window → reconcile-external', () => {
+    // nextOverTime is in the very recent past (5s ago, less than the 10s buffer).
+    // The buffer is a clock-skew safety margin to avoid the 100-energy anti-spam
+    // penalty; within it the policy still treats cooldown as active.
+    expect(decideOvertime(input({
+      jobOverTime: { points: 1000, usableEnergy: 500, nextOverTime: NOW - 5 },
+    }))).toEqual({ kind: 'reconcile-external' });
   });
 
   it('cooldown == 0 (no cooldown ever)', () => {
