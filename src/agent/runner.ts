@@ -553,6 +553,7 @@ async function runCycle(
     buyFood: !!state.completedActions.buyFood,
     vipClaim: !!state.completedActions.vipClaim,
     workOvertime: !!state.completedActions.workOvertime,
+    buyGold: !!state.completedActions.buyGold,
   };
   uiSnapshot.weeklyFuel = {
     week: fuel.week,
