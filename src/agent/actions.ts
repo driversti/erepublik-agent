@@ -4,6 +4,7 @@ import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
+import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
 
 export interface RunActionOptions {
@@ -11,6 +12,8 @@ export interface RunActionOptions {
   autoEmploy: boolean;
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
   maxFoodPrice: number;
+  /** Configured gold amount (1..10). Runner pre-filter ensures we never reach this branch with 0. */
+  buyGoldAmount: number;
   /** Async notifier (Telegram). Pass a no-op when chat isn't configured. */
   notify: (m: string) => Promise<void>;
 }
@@ -83,6 +86,26 @@ export async function runAction(
     }
     const tag = r.success ? `✅ @ ${r.price}` : `⏭  ${r.reason ?? 'failed'}`;
     console.log(`[cycle] buyFood: ${tag}`);
+    return;
+  }
+  if (action === 'buyGold') {
+    const r = await buyOneGoldFromMarket(ctx, csrf, opts.buyGoldAmount);
+    if (r.success) {
+      state.completedActions.buyGold = {
+        at,
+        source: r.alreadyDone ? 'external' : 'agent',
+        offerId: r.offerId,
+        amount: r.amount,
+      };
+    } else {
+      await opts.notify(`⚠️ buy gold failed — ${r.reason ?? 'unknown'}`);
+    }
+    const tag = r.success
+      ? r.alreadyDone
+        ? '⏭ already done (daily cap)'
+        : `✅ ${r.amount}g via offer ${r.offerId}`
+      : `❌ ${r.reason ?? 'unknown'}`;
+    console.log(`[cycle] buyGold: ${tag}`);
     return;
   }
 }
