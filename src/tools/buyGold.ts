@@ -1,3 +1,7 @@
+import type { BrowserContext } from 'playwright-core';
+import { apiCall } from '../transport/apiCall.js';
+import { apiCallHtml } from '../transport/apiCallHtml.js';
+
 export interface GoldOffer {
   offerId: number;
   amount: number;
@@ -39,10 +43,6 @@ export function parseFirstSufficientOffer(html: string, minAmount: number): Gold
   }
   return null;
 }
-
-import type { BrowserContext } from 'playwright-core';
-import { apiCall } from '../transport/apiCall.js';
-import { apiCallHtml } from '../transport/apiCallHtml.js';
 
 export interface BuyGoldResult {
   success: boolean;
