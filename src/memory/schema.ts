@@ -11,6 +11,11 @@ const BuyFoodRecord = ActionRecord.extend({
   offerId: z.number().int().optional(),
 });
 
+const BuyGoldRecord = ActionRecord.extend({
+  offerId: z.number().int().optional(),
+  amount: z.number().int().min(1).max(10).optional(),
+});
+
 export const DailyState = z.object({
   eRepublikDay: z.number().int(),
   completedActions: z.object({
@@ -19,6 +24,7 @@ export const DailyState = z.object({
     buyFood: BuyFoodRecord.optional(),
     vipClaim: ActionRecord.optional(),
     workOvertime: ActionRecord.optional(),
+    buyGold: BuyGoldRecord.optional(),
   }),
   claimedMissionIds: z.array(z.number().int()).default([]),
   claimedChestThresholds: z.array(z.number().int()).default([]),
@@ -54,7 +60,7 @@ export function emptyState(day: number): DailyState {
 }
 
 /** Safe-daily keys currently in scope (i.e. we have tools that perform them). */
-export const ACTIVE_SAFE_DAILY_KEYS = ['work', 'train', 'vipClaim', 'buyFood'] as const;
+export const ACTIVE_SAFE_DAILY_KEYS = ['work', 'train', 'vipClaim', 'buyFood', 'buyGold'] as const;
 export type ActiveSafeDailyKey = (typeof ACTIVE_SAFE_DAILY_KEYS)[number];
 
 export function pendingActions(s: DailyState): ActiveSafeDailyKey[] {
