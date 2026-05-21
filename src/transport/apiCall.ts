@@ -1,8 +1,7 @@
-import type { BrowserContext, Page } from 'playwright-core';
+import type { BrowserContext } from 'playwright-core';
 import { assertAllowed, type HttpMethod } from './allowlist.js';
 import { ForbiddenError } from './errors.js';
-
-const BASE = 'https://www.erepublik.com';
+import { BASE, getOrCreateErepublikPage } from './browserPage.js';
 
 export interface ApiCallInput {
   method: HttpMethod;
@@ -38,23 +37,6 @@ export class ApiTimeoutError extends Error {
 export interface ApiCallResult<T = unknown> {
   status: number;
   body: T;
-}
-
-/**
- * Returns a long-lived page bound to www.erepublik.com. Reused as the host for
- * all `fetch()` calls so requests carry the full browser fingerprint
- * (sec-ch-ua-*, sec-fetch-*, navigator UA, cookies, TLS profile) instead of
- * Playwright's bare-bones `ctx.request` profile that bot-detection can spot.
- */
-async function getOrCreateErepublikPage(ctx: BrowserContext): Promise<Page> {
-  for (const p of ctx.pages()) {
-    if (p.url().startsWith(BASE)) return p;
-  }
-  const page = ctx.pages()[0] ?? (await ctx.newPage());
-  if (!page.url().startsWith(BASE)) {
-    await page.goto(`${BASE}/en`, { waitUntil: 'domcontentloaded' });
-  }
-  return page;
 }
 
 export async function apiCall<T = unknown>(ctx: BrowserContext, input: ApiCallInput): Promise<ApiCallResult<T>> {
