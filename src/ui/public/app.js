@@ -84,15 +84,15 @@ function renderStatus(s) {
 
   const da = s.dailyActions;
   const showGold = !!(s.settings?.buyGold?.enabled && s.settings?.buyGold?.amount > 0);
-  const rows = [
+  const dailyRows = [
     ['Work', da.work],
     ['Train', da.train],
     ['Overtime', da.workOvertime],
     ['VIP claim', da.vipClaim],
     ['Buy food', da.buyFood],
   ];
-  if (showGold) rows.push(['Buy gold', da.buyGold]);
-  document.getElementById('daily-actions').innerHTML = rows
+  if (showGold) dailyRows.push(['Buy gold', da.buyGold]);
+  document.getElementById('daily-actions').innerHTML = dailyRows
     .map(([k, v]) => `<li>${v ? '✅' : '⏳'} ${k}</li>`)
     .join('');
 }
