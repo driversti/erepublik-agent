@@ -35,6 +35,11 @@ export async function apiCallHtml(
 
   const evaluatePromise = page.evaluate<{ status: number; contentType: string; text: string }, { url: string }>(
     async ({ url: u }) => {
+      // Deliberately no `X-Requested-With: XMLHttpRequest` here, unlike apiCall.
+      // The exchange-market page is a full HTML document served from the same
+      // origin; setting the XHR header changes how some eRepublik handlers
+      // route the response (returning a JSON fragment instead of the full
+      // page). Keep this a plain navigation-shaped GET.
       const r = await fetch(u, {
         method: 'GET',
         credentials: 'include',

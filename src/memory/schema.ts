@@ -67,6 +67,16 @@ export function pendingActions(s: DailyState): ActiveSafeDailyKey[] {
   return ACTIVE_SAFE_DAILY_KEYS.filter((k) => s.completedActions[k] == null);
 }
 
+/**
+ * Returns true when every key in {@link ACTIVE_SAFE_DAILY_KEYS} has a completion
+ * record. **Footgun:** some active keys are gated by settings (e.g. `buyGold`,
+ * which is excluded when `settings.buyGold.enabled === false` or `amount === 0`).
+ * For optional actions, callers must filter them out before relying on this
+ * predicate — otherwise it will return `false` for a perfectly idle cycle just
+ * because an opt-in action is disabled. The runner does this filtering at the
+ * call site via `pending.length === 0` after applying the buyGold filter; see
+ * `src/agent/runner.ts`. If you reach for this helper, replicate that filter.
+ */
 export function allSafeDailyDone(s: DailyState): boolean {
   return pendingActions(s).length === 0;
 }
