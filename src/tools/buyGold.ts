@@ -39,3 +39,77 @@ export function parseFirstSufficientOffer(html: string, minAmount: number): Gold
   }
   return null;
 }
+
+import type { BrowserContext } from 'playwright-core';
+import { apiCall } from '../transport/apiCall.js';
+import { apiCallHtml } from '../transport/apiCallHtml.js';
+
+export interface BuyGoldResult {
+  success: boolean;
+  /** Server confirmed via "maximum limit": daily cap already hit. Runner records source:'external'. */
+  alreadyDone?: boolean;
+  offerId?: number;
+  amount?: number;
+  reason?: string;
+  status?: number;
+}
+
+interface PurchaseResp {
+  error?: boolean;
+  message?: string;
+}
+
+/**
+ * Composite: fetch the exchange market page, pick the first offer with
+ * `amount >= requestedAmount`, and POST a purchase for that amount. Returns a
+ * `BuyGoldResult` shaped so the runner can either flip `completedActions.buyGold`
+ * (success or alreadyDone) or alert + retry (anything else).
+ *
+ * Server responses observed:
+ *  - success → `{ error: false, message: "...success...", gold: ..., currency: ... }`
+ *  - already-bought-today → `{ error: true, message: "...maximum limit..." }`
+ *  - other failures → `{ error: true, message: "<diagnostic>" }`
+ */
+export async function buyOneGoldFromMarket(
+  ctx: BrowserContext,
+  csrf: string,
+  requestedAmount: number,
+): Promise<BuyGoldResult> {
+  if (requestedAmount < 1 || requestedAmount > 10) {
+    return { success: false, reason: `amount_out_of_range: ${requestedAmount}` };
+  }
+
+  const { html } = await apiCallHtml(ctx, {
+    method: 'GET',
+    path: '/en/economy/exchange-market',
+  });
+  const offer = parseFirstSufficientOffer(html, requestedAmount);
+  if (!offer) {
+    return { success: false, reason: `no_offer_with_amount_>=_${requestedAmount}` };
+  }
+
+  const { status, body } = await apiCall<PurchaseResp>(ctx, {
+    method: 'POST',
+    path: '/en/economy/exchange/purchase/',
+    csrf,
+    form: {
+      offerId: offer.offerId,
+      amount: requestedAmount,
+      buyAction: 1,
+    },
+  });
+
+  if (body.error === true && /maximum limit/i.test(body.message ?? '')) {
+    return { success: true, alreadyDone: true, offerId: offer.offerId, amount: requestedAmount, status };
+  }
+  if (status === 200 && body.error !== true) {
+    return { success: true, offerId: offer.offerId, amount: requestedAmount, status };
+  }
+  return {
+    success: false,
+    offerId: offer.offerId,
+    amount: requestedAmount,
+    status,
+    reason: body.message ?? `http_${status}`,
+  };
+}
