@@ -180,6 +180,22 @@
         </p>
       </div>
       <div class="bg-gray-50 rounded p-3 text-sm mt-4">
+        <div class="font-medium mb-2">Buy Gold</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="bg-enabled" type="checkbox" class="h-4 w-4">
+            <span>Enabled</span>
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs text-gray-500">Amount (0–10)</span>
+            <input id="bg-amount" type="number" min="0" max="10" class="border rounded px-2 py-1">
+          </label>
+        </div>
+        <p class="text-xs text-gray-600 mt-2">
+          ⓘ Buys the configured amount of gold from the monetary market once per game day (PST). eRepublik caps gold purchases at 10/day.
+        </p>
+      </div>
+      <div class="bg-gray-50 rounded p-3 text-sm mt-4">
         <div class="font-medium mb-2">Farm session cooldown</div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label class="flex flex-col">
