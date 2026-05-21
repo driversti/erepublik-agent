@@ -585,7 +585,7 @@ async function runCycle(
   // Hash the rendered text (not the raw state) so identical-looking digests
   // don't get resent because of a flapping hidden field like `fuel.lastFarmedAt`
   // or `state.awaySince`. Contract: same message → no resend.
-  const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget);
+  const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget, settings.buyGold);
   const hash = digestHash(digest);
   if (hash !== state.lastDigestHash) {
     console.log('[cycle] digest:\n' + digest);

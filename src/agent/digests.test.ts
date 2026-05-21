@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { digestHash, formatDigest } from './digests.js';
+import { emptyState } from '../memory/schema.js';
 import type { DailyState } from '../memory/schema.js';
 import type { WeeklyState } from '../memory/weeklyState.js';
 import type { WeeklyFuelState } from '../memory/weeklyFuelState.js';
@@ -139,5 +140,42 @@ describe('formatDigest', () => {
     state.completedActions.workOvertime = { at: '2026-05-20T08:00:00Z', source: 'agent' };
     expect(formatDigest(state.eRepublikDay, state, makeWeekly(), makeFuel(), 70))
       .toContain('OT ✅');
+  });
+
+  it('omits Gold marker when buyGold is disabled', () => {
+    const day = 6757;
+    const state = emptyState(day);
+    const weekly = { lastClaimedRewardId: null };
+    const fuel = { week: 'w1', spent: 0, hitsLanded: 0 };
+    const text = formatDigest(day, state as any, weekly as any, fuel as any, 70, {
+      enabled: false,
+      amount: 0,
+    });
+    expect(text).not.toContain('Gold');
+  });
+
+  it('includes Gold marker when buyGold is enabled', () => {
+    const day = 6757;
+    const state = emptyState(day);
+    const weekly = { lastClaimedRewardId: null };
+    const fuel = { week: 'w1', spent: 0, hitsLanded: 0 };
+    const text = formatDigest(day, state as any, weekly as any, fuel as any, 70, {
+      enabled: true,
+      amount: 10,
+    });
+    expect(text).toContain('Gold ⏳');
+  });
+
+  it('shows ✅ for Gold when completedActions.buyGold is set', () => {
+    const day = 6757;
+    const state = emptyState(day);
+    state.completedActions.buyGold = { at: '2026-05-21T00:00:00.000Z', source: 'agent', amount: 10 };
+    const weekly = { lastClaimedRewardId: null };
+    const fuel = { week: 'w1', spent: 0, hitsLanded: 0 };
+    const text = formatDigest(day, state as any, weekly as any, fuel as any, 70, {
+      enabled: true,
+      amount: 10,
+    });
+    expect(text).toContain('Gold ✅');
   });
 });
