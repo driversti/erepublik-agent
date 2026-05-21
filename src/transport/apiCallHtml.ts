@@ -1,10 +1,15 @@
-import type { BrowserContext, Page } from 'playwright-core';
+import type { BrowserContext } from 'playwright-core';
 import { assertAllowed } from './allowlist.js';
 import { ForbiddenError } from './errors.js';
 import { withTimeout, DEFAULT_TIMEOUT_MS } from './apiCall.js';
+import { BASE, getOrCreateErepublikPage } from './browserPage.js';
 
-const BASE = 'https://www.erepublik.com';
-
+/**
+ * Inputs for {@link apiCallHtml}. GET-only — the eRepublik HTML pages we
+ * scrape (e.g. the monetary market) don't need CSRF or form bodies, and the
+ * response path returns text rather than enforcing JSON. For POSTs, use
+ * {@link ./apiCall.apiCall} which handles `_token` and form encoding.
+ */
 export interface ApiCallHtmlInput {
   method: 'GET';
   path: string;
@@ -17,17 +22,6 @@ export interface ApiCallHtmlInput {
 export interface ApiCallHtmlResult {
   status: number;
   html: string;
-}
-
-async function getOrCreateErepublikPage(ctx: BrowserContext): Promise<Page> {
-  for (const p of ctx.pages()) {
-    if (p.url().startsWith(BASE)) return p;
-  }
-  const page = ctx.pages()[0] ?? (await ctx.newPage());
-  if (!page.url().startsWith(BASE)) {
-    await page.goto(`${BASE}/en`, { waitUntil: 'domcontentloaded' });
-  }
-  return page;
 }
 
 export async function apiCallHtml(
