@@ -61,4 +61,9 @@ describe('parseFirstSufficientOffer', () => {
     expect(parseFirstSufficientOffer(html, 1)).toEqual({ offerId: 1, amount: 5 });
     expect(parseFirstSufficientOffer(html, 20)).toBeNull();
   });
+
+  it('handles amounts with thousand-separator commas (1,500 → 1500)', () => {
+    const html = pageWith([ROW('Alice', '1,500.00', '42')]);
+    expect(parseFirstSufficientOffer(html, 10)).toEqual({ offerId: 42, amount: 1500 });
+  });
 });
