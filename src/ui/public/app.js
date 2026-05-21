@@ -83,13 +83,16 @@ function renderStatus(s) {
   setBar(['fuel-text', 'fuel-bar-text'], 'fuel-bar', s.citizen.fuelLeft, s.citizen.maxFuel);
 
   const da = s.dailyActions;
-  document.getElementById('daily-actions').innerHTML = [
+  const showGold = !!(s.settings?.buyGold?.enabled && s.settings?.buyGold?.amount > 0);
+  const rows = [
     ['Work', da.work],
     ['Train', da.train],
     ['Overtime', da.workOvertime],
     ['VIP claim', da.vipClaim],
     ['Buy food', da.buyFood],
-  ]
+  ];
+  if (showGold) rows.push(['Buy gold', da.buyGold]);
+  document.getElementById('daily-actions').innerHTML = rows
     .map(([k, v]) => `<li>${v ? '✅' : '⏳'} ${k}</li>`)
     .join('');
 }
@@ -255,6 +258,25 @@ function bindControls() {
         s.workOvertime.mode = e.target.value;
       }),
     );
+  const bgEnabled = document.getElementById('bg-enabled');
+  if (bgEnabled)
+    bgEnabled.addEventListener('change', (e) =>
+      scheduleSave((s) => {
+        s.buyGold = s.buyGold || {};
+        s.buyGold.enabled = e.target.checked;
+      }),
+    );
+  const bgAmount = document.getElementById('bg-amount');
+  if (bgAmount)
+    bgAmount.addEventListener('change', (e) => {
+      const raw = parseInt(e.target.value, 10);
+      const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(10, raw)) : 0;
+      e.target.value = String(clamped);
+      scheduleSave((s) => {
+        s.buyGold = s.buyGold || {};
+        s.buyGold.amount = clamped;
+      });
+    });
 }
 
 function bindRunNowButton() {
@@ -328,6 +350,10 @@ function renderSettingsForm(s) {
   if (otEnabled && document.activeElement !== otEnabled) otEnabled.checked = !!s.workOvertime?.enabled;
   const otMode = document.getElementById('ot-mode');
   if (otMode && document.activeElement !== otMode) otMode.value = s.workOvertime?.mode ?? 'once-per-day';
+  const bgEnabled = document.getElementById('bg-enabled');
+  if (bgEnabled && document.activeElement !== bgEnabled) bgEnabled.checked = !!s.buyGold?.enabled;
+  const bgAmount = document.getElementById('bg-amount');
+  if (bgAmount && document.activeElement !== bgAmount) bgAmount.value = String(s.buyGold?.amount ?? 10);
 }
 
 bindControls();
