@@ -114,6 +114,40 @@ describe('settingsStore', () => {
       writeFileSync(file, JSON.stringify({ paused: 'yes please' }));
       expect(() => loadSettings()).toThrow();
     });
+
+    it('defaults buyGold to { enabled: false, amount: 10 }', () => {
+      const settings = loadSettings();
+      expect(settings.buyGold).toEqual({ enabled: false, amount: 10 });
+    });
+
+    it('migrates ERP_BUY_GOLD_ENABLED from .env on first run', () => {
+      process.env.ERP_BUY_GOLD_ENABLED = 'true';
+      try {
+        const settings = loadSettings();
+        expect(settings.buyGold.enabled).toBe(true);
+      } finally {
+        delete process.env.ERP_BUY_GOLD_ENABLED;
+      }
+    });
+
+    it('migrates ERP_BUY_GOLD_AMOUNT from .env on first run', () => {
+      process.env.ERP_BUY_GOLD_AMOUNT = '5';
+      try {
+        const settings = loadSettings();
+        expect(settings.buyGold.amount).toBe(5);
+      } finally {
+        delete process.env.ERP_BUY_GOLD_AMOUNT;
+      }
+    });
+  });
+
+  describe('schema validation', () => {
+    it('rejects buyGold.amount below 0', () => {
+      expect(() => Settings.parse({ ...DEFAULT_SETTINGS, buyGold: { enabled: true, amount: -1 } })).toThrow();
+    });
+    it('rejects buyGold.amount above 10', () => {
+      expect(() => Settings.parse({ ...DEFAULT_SETTINGS, buyGold: { enabled: true, amount: 11 } })).toThrow();
+    });
   });
 
   describe('saveSettings', () => {

@@ -57,6 +57,11 @@ const WorkOvertimeSettings = z.object({
   mode: z.enum(['once-per-day', 'when-available']).default('once-per-day'),
 });
 
+const BuyGoldSettings = z.object({
+  enabled: z.boolean().default(false),
+  amount: z.number().int().min(0).max(10).default(10),
+});
+
 const DetectedState = z.object({
   division: z.number().int().nullable().default(null),
   hasMaverick: z.boolean().nullable().default(null),
@@ -121,6 +126,7 @@ export const Settings = z.object({
     enabled: true,
     mode: 'once-per-day' as const,
   })),
+  buyGold: BuyGoldSettings.default(() => ({ enabled: false, amount: 10 })),
   detected: DetectedState.default(() => ({
     division: null,
     hasMaverick: null,
@@ -179,6 +185,10 @@ function buildInitial(): Settings {
     farmSession: {
       cooldownMinMinutes: envNum('ERP_SESSION_COOLDOWN_MIN_MIN', 30),
       cooldownMaxMinutes: envNum('ERP_SESSION_COOLDOWN_MAX_MIN', 90),
+    },
+    buyGold: {
+      enabled: envBool('ERP_BUY_GOLD_ENABLED', false),
+      amount: envNum('ERP_BUY_GOLD_AMOUNT', 10),
     },
   });
 }
