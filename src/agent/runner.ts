@@ -12,7 +12,7 @@ import type { BrowserContext } from 'playwright-core';
 import { openSession, extractCitizenContext } from '../browser/session.js';
 import { effectiveMode } from './modeSelector.js';
 import { eRepublikDay } from '../erepublik/day.js';
-import { allSafeDailyDone, overtimeStillPending, pendingActions } from '../memory/schema.js';
+import { overtimeStillPending, pendingActions } from '../memory/schema.js';
 import { reconcile } from './cycle.js';
 import { getMissionState } from '../tools/missions.js';
 import { getObjectiveStatus } from '../tools/objectives.js';
@@ -201,8 +201,12 @@ async function runCycle(
   const completedMissionIds = missions.missions.filter((m) => m.completed).map((m) => m.id);
   const unclaimedMissions = completedMissionIds.filter((id) => !state.claimedMissionIds.includes(id));
   const unclaimedObjectives = objectives.available.filter((c) => !state.claimedChestThresholds.includes(c));
+
+  const buyGoldActive = settings.buyGold.enabled && settings.buyGold.amount > 0;
+  const pending = pendingActions(state).filter((k) => k !== 'buyGold' || buyGoldActive);
+
   const shortCircuit =
-    allSafeDailyDone(state) &&
+    pending.length === 0 &&
     unclaimedMissions.length === 0 &&
     unclaimedObjectives.length === 0 &&
     !weeklyUnclaimed &&
@@ -212,7 +216,6 @@ async function runCycle(
     if (shortCircuit) {
       console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — nothing to do');
     } else {
-      const pending = pendingActions(state);
       console.log(
         `[cycle] pending: [${pending.join(', ')}], unclaimedMissions: [${unclaimedMissions.join(', ')}], unclaimedObjectives: [${unclaimedObjectives.join(', ')}]`,
       );
@@ -226,6 +229,7 @@ async function runCycle(
       const runActionOpts = {
         autoEmploy: settings.autoEmploy,
         maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
+        buyGoldAmount: settings.buyGold.amount,
         notify: (m: string) => notifier.send(m),
       };
       async function tryAction(action: import('../memory/schema.js').ActiveSafeDailyKey) {
@@ -271,6 +275,7 @@ async function runCycle(
 
       await tryAction('vipClaim');
       await tryAction('buyFood');
+      await tryAction('buyGold');
 
       // 2. Idempotent sweeps — safe to call even when nothing is claimable.
       //    See `rewardSweeper.ts` for the per-sweep error isolation policy.
