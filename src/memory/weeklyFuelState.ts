@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { eRepublikWeek } from '../erepublik/week.js';
 import { sessionsDir } from '../paths.js';
+import { atomicWriteFileSync, quarantineCorruptedFile } from '../util/atomicWrite.js';
 
 function filePath(): string {
   return join(sessionsDir(), 'weekly-fuel-state.json');
@@ -51,19 +52,33 @@ export function loadFuel(now: Date = new Date()): { state: WeeklyFuelState; roll
   if (!existsSync(file)) {
     return { state: emptyState(currentWeek), rolledOver: false };
   }
-  const parsed = WeeklyFuelState.parse(JSON.parse(readFileSync(file, 'utf8')));
+  let parsed: WeeklyFuelState;
+  try {
+    parsed = WeeklyFuelState.parse(JSON.parse(readFileSync(file, 'utf8')));
+  } catch (err) {
+    // Most commonly: file truncated/NUL-filled by an interrupted write across
+    // a hard reboot. Move it aside and start fresh; runCycle reconciles
+    // `spent` against the live fuel inventory anyway, so the only real loss
+    // is the cooldown timer.
+    const quarantined = quarantineCorruptedFile(file);
+    console.warn(
+      `[weeklyFuelState] weekly-fuel-state.json was unreadable (${(err as Error).message}); ` +
+        `quarantined to ${quarantined ?? '<rename failed>'} and starting from empty state`,
+    );
+    return { state: emptyState(currentWeek), rolledOver: false };
+  }
   if (parsed.week === currentWeek) {
     return { state: parsed, rolledOver: false };
   }
   // Week rolled over — archive prior week for retrospective analysis.
   const archive = join(sessionsDir(), `weekly-fuel-${parsed.week}.archive.json`);
-  writeFileSync(archive, JSON.stringify(parsed, null, 2), 'utf8');
+  atomicWriteFileSync(archive, JSON.stringify(parsed, null, 2));
   return { state: emptyState(currentWeek), rolledOver: true };
 }
 
 export function saveFuel(state: WeeklyFuelState): void {
   // sessionsDir() already mkdirs.
-  writeFileSync(filePath(), JSON.stringify(state, null, 2), 'utf8');
+  atomicWriteFileSync(filePath(), JSON.stringify(state, null, 2));
 }
 
 export interface ReconcileResult {

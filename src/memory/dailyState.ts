@@ -1,6 +1,7 @@
-import { readFileSync, renameSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, renameSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { sessionsDir } from '../paths.js';
+import { atomicWriteFileSync, quarantineCorruptedFile } from '../util/atomicWrite.js';
 import { DailyState, emptyState } from './schema.js';
 
 function ensureDir(): void {
@@ -26,8 +27,23 @@ export function loadOrInit(currentDay: number): LoadResult {
   const target = filePath(currentDay);
 
   if (existsSync(target)) {
-    const parsed = DailyState.parse(JSON.parse(readFileSync(target, 'utf8')));
-    return { state: parsed, rolledOver: false };
+    try {
+      const parsed = DailyState.parse(JSON.parse(readFileSync(target, 'utf8')));
+      return { state: parsed, rolledOver: false };
+    } catch (err) {
+      // File exists but is unreadable as DailyState — most commonly an empty
+      // or NUL-filled file left over from a hard reboot mid-write. Move it
+      // aside so the runner can boot from a fresh state instead of looping on
+      // the same parse error every cycle.
+      const quarantined = quarantineCorruptedFile(target);
+      console.warn(
+        `[dailyState] daily-state-${currentDay}.json was unreadable (${(err as Error).message}); ` +
+          `quarantined to ${quarantined ?? '<rename failed>'} and starting from empty state`,
+      );
+      const fresh = emptyState(currentDay);
+      atomicWriteFileSync(target, JSON.stringify(fresh, null, 2));
+      return { state: fresh, rolledOver: false };
+    }
   }
 
   // Archive any stale daily-state-*.json files (different day)
@@ -42,11 +58,11 @@ export function loadOrInit(currentDay: number): LoadResult {
   }
 
   const fresh = emptyState(currentDay);
-  writeFileSync(target, JSON.stringify(fresh, null, 2), 'utf8');
+  atomicWriteFileSync(target, JSON.stringify(fresh, null, 2));
   return { state: fresh, rolledOver };
 }
 
 export function save(state: DailyState): void {
   ensureDir();
-  writeFileSync(filePath(state.eRepublikDay), JSON.stringify(state, null, 2), 'utf8');
+  atomicWriteFileSync(filePath(state.eRepublikDay), JSON.stringify(state, null, 2));
 }
