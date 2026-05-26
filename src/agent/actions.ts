@@ -6,6 +6,7 @@ import { buyOneCheapestFood } from '../tools/market.js';
 import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
 import type { CycleEvent } from './cycleEvents.js';
+import { escapeMdV2 } from '../telegram/mdV2.js';
 
 export interface RunActionOptions {
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
@@ -85,7 +86,7 @@ export async function runAction(
       // Failure stays a real-time Telegram alert — it needs operator attention
       // (insufficient CC, no offer, server reject) and shouldn't wait for the
       // end-of-cycle digest.
-      await opts.notify(`⚠️ buy gold failed — ${r.reason ?? 'unknown'}`);
+      await opts.notify(escapeMdV2(`⚠️ buy gold failed — ${r.reason ?? 'unknown'}`));
     }
     const tag = r.success
       ? r.alreadyDone

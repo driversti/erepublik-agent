@@ -52,13 +52,17 @@ describe('runAction("buyGold", …)', () => {
     expect(state.completedActions.buyGold?.source).toBe('external');
   });
 
-  it('failure → no flag, notify called once with reason', async () => {
+  it('failure → no flag, notify called once with MarkdownV2-escaped reason', async () => {
     const state = emptyState(6757);
     const cap = notifyCaptor();
-    buyOneGoldFromMarket.mockResolvedValue({ success: false, reason: 'http_500' });
+    // Reason contains chars reserved in MarkdownV2 (_, >, =) to guard against
+    // regressions of the Telegram HTTP 400 we hit on `no_offer_with_amount_>=_1`.
+    buyOneGoldFromMarket.mockResolvedValue({ success: false, reason: 'no_offer_with_amount_>=_1' });
     await runAction('buyGold', {} as any, 'csrf', 84, state, { ...baseOpts(), notify: cap.notify });
     expect(state.completedActions.buyGold).toBeUndefined();
-    expect(cap.calls).toEqual([expect.stringContaining('http_500')]);
+    expect(cap.calls).toEqual([
+      '⚠️ buy gold failed — no\\_offer\\_with\\_amount\\_\\>\\=\\_1',
+    ]);
   });
 
   it('alreadyDone path does not call notify', async () => {
