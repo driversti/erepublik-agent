@@ -39,6 +39,7 @@ describe('configureUpdater', () => {
     configureUpdater({
       onUpdateAvailable: vi.fn(),
       onUpdateNotAvailable: vi.fn(),
+      onUpdateDownloaded: vi.fn(),
       onError: vi.fn(),
     });
 
@@ -51,6 +52,7 @@ describe('configureUpdater', () => {
     configureUpdater({
       onUpdateAvailable: vi.fn(),
       onUpdateNotAvailable: vi.fn(),
+      onUpdateDownloaded: vi.fn(),
       onError: vi.fn(),
     });
 
@@ -71,6 +73,7 @@ describe('configureUpdater', () => {
     configureUpdater({
       onUpdateAvailable: vi.fn(),
       onUpdateNotAvailable: vi.fn(),
+      onUpdateDownloaded: vi.fn(),
       onError,
     });
 
@@ -86,11 +89,30 @@ describe('configureUpdater', () => {
     const handle = configureUpdater({
       onUpdateAvailable: vi.fn(),
       onUpdateNotAvailable: vi.fn(),
+      onUpdateDownloaded: vi.fn(),
       onError: vi.fn(),
     });
 
     handle.dispose();
     await vi.advanceTimersByTimeAsync(30_000 + 48 * 60 * 60 * 1000);
     expect(checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  it('routes update-downloaded to onUpdateDownloaded with the version', async () => {
+    const onUpdateDownloaded = vi.fn();
+    configureUpdater({
+      onUpdateAvailable: vi.fn(),
+      onUpdateNotAvailable: vi.fn(),
+      onUpdateDownloaded,
+      onError: vi.fn(),
+    });
+
+    // Find the 'update-downloaded' handler registered via autoUpdater.on(...)
+    const downloadedCall = onSpy.mock.calls.find((c) => c[0] === 'update-downloaded');
+    expect(downloadedCall, 'update-downloaded should be subscribed').toBeDefined();
+    const handler = downloadedCall![1] as (info: { version: string }) => void;
+    handler({ version: '1.2.3' });
+
+    expect(onUpdateDownloaded).toHaveBeenCalledWith('1.2.3');
   });
 });
