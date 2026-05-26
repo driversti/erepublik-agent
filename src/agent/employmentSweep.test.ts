@@ -67,7 +67,7 @@ describe('runEmploymentSweep', () => {
     expect(state.notifiedNoJobToday).toBe(false);
   });
 
-  it('hires + notifies + clears notifiedNoJobToday on `applied`', async () => {
+  it('hires + clears notifiedNoJobToday on `applied` (digest emits the hire line)', async () => {
     const state = emptyState(6761);
     state.notifiedNoJobToday = true;
     const cap = notifyCaptor();
@@ -85,7 +85,13 @@ describe('runEmploymentSweep', () => {
     });
     expect(r.employed).toBe(true);
     expect(r.action).toBe('applied');
-    expect(cap.calls).toEqual([expect.stringContaining('HighPay')]);
+    expect(r.employerName).toBe('HighPay');
+    expect(r.netSalary).toBe(4950);
+    expect(r.currency).toBe('USD');
+    // Hire success no longer fires a standalone Telegram message — the
+    // runner derives the digest line from the returned result, so the
+    // sweep itself stays silent.
+    expect(cap.calls).toEqual([]);
     expect(state.notifiedNoJobToday).toBe(false);
   });
 
@@ -197,7 +203,11 @@ describe('runEmploymentSweep — job upgrade path', () => {
     expect(r.action).toBe('upgraded');
     expect(r.employed).toBe(true);
     expect(r.employerName).toBe('NewBoss');
-    expect(cap.calls.some((m) => m.includes('upgrade'))).toBe(true);
+    expect(r.netSalary).toBe(1980);
+    expect(r.previousNetSalary).toBe(990);
+    // Upgrade success is announced via the runner's batch digest, not by
+    // the sweep itself — so no Telegram call here.
+    expect(cap.calls).toEqual([]);
   });
 
   it('stays employed if resign rejected (still old employer)', async () => {

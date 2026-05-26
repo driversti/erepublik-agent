@@ -5,6 +5,7 @@ import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
 import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
+import type { CycleEvent } from './cycleEvents.js';
 
 export interface RunActionOptions {
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
@@ -16,8 +17,14 @@ export interface RunActionOptions {
 }
 
 /**
- * Execute one safe-daily action (work / train / vipClaim / buyFood). The
- * `runCycle` loop is the only writer of state; this function mutates
+ * Execute one safe-daily action (work / train / vipClaim / buyFood / buyGold).
+ *
+ * Returns a `CycleEvent` when the action SUCCESSFULLY ran (so the runner can
+ * include it in the end-of-cycle batch digest), or `null` when the action
+ * was a no-op / failure. The caller is responsible for pushing the returned
+ * event into the per-cycle accumulator.
+ *
+ * The `runCycle` loop is the only writer of state; this function mutates
  * `state.completedActions` on success. Errors propagate to the caller, which
  * already wraps each invocation in a per-action try/catch.
  *
@@ -32,25 +39,28 @@ export async function runAction(
   countryId: number,
   state: DailyState,
   opts: RunActionOptions,
-): Promise<void> {
+): Promise<CycleEvent | null> {
   const at = new Date().toISOString();
   if (action === 'work') {
     const r = await work(ctx, csrf);
     if (r.success) state.completedActions.work = { at, source: 'agent' };
     console.log(`[cycle] work: ${r.success ? '✅' : '❌'} status=${r.status}`);
-    return;
+    return r.success ? { kind: 'work' } : null;
   }
   if (action === 'train') {
     const r = await train(ctx, csrf);
     if (r.success) state.completedActions.train = { at, source: 'agent' };
     console.log(`[cycle] train: ${r.success ? '✅' : '❌'} count=${r.count} status=${r.status}`);
-    return;
+    // Only surface to the digest when we actually drilled — `alreadyTrained`
+    // means the day's training was already done before this cycle started.
+    if (!r.success || r.alreadyTrained) return null;
+    return { kind: 'train', count: r.count };
   }
   if (action === 'vipClaim') {
     const r = await claimVip(ctx, csrf);
     if (r.success) state.completedActions.vipClaim = { at, source: 'agent' };
     console.log(`[cycle] vipClaim: ${r.success ? '✅' : '❌'}`);
-    return;
+    return r.success ? { kind: 'vipClaim' } : null;
   }
   if (action === 'buyFood') {
     const r = await buyOneCheapestFood(ctx, csrf, countryId, opts.maxFoodPrice);
@@ -59,7 +69,8 @@ export async function runAction(
     }
     const tag = r.success ? `✅ @ ${r.price}` : `⏭  ${r.reason ?? 'failed'}`;
     console.log(`[cycle] buyFood: ${tag}`);
-    return;
+    if (r.success && r.price != null) return { kind: 'buyFood', price: r.price };
+    return null;
   }
   if (action === 'buyGold') {
     const r = await buyOneGoldFromMarket(ctx, csrf, opts.buyGoldAmount);
@@ -71,6 +82,9 @@ export async function runAction(
         amount: r.amount,
       };
     } else {
+      // Failure stays a real-time Telegram alert — it needs operator attention
+      // (insufficient CC, no offer, server reject) and shouldn't wait for the
+      // end-of-cycle digest.
       await opts.notify(`⚠️ buy gold failed — ${r.reason ?? 'unknown'}`);
     }
     const tag = r.success
@@ -79,6 +93,11 @@ export async function runAction(
         : `✅ ${r.amount}g via offer ${r.offerId}`
       : `❌ ${r.reason ?? 'unknown'}`;
     console.log(`[cycle] buyGold: ${tag}`);
-    return;
+    // `alreadyDone` means the cap was already burned earlier today by another
+    // process; the agent didn't actually spend CC, so it doesn't belong in the
+    // "this cycle achievements" digest.
+    if (!r.success || r.alreadyDone) return null;
+    return { kind: 'buyGold', amount: opts.buyGoldAmount };
   }
+  return null;
 }

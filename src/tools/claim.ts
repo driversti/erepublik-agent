@@ -23,8 +23,19 @@ export async function claimMission(
   return { missionId, success: status === 200, status, body };
 }
 
+/**
+ * Identity of a freshly-claimed mission. Carries the human-readable title so
+ * downstream notifications can render `Vote a Newspaper Article` instead of
+ * the opaque numeric id `100007`. Titles come straight from the API's own
+ * mission catalog (see [[mission_ids_reference]]).
+ */
+export interface ClaimedMission {
+  id: number;
+  title: string;
+}
+
 export interface CollectResult {
-  claimed: number[];
+  claimed: ClaimedMission[];
   skipped: number[];
   failed: { missionId: number; status: number }[];
 }
@@ -44,7 +55,7 @@ export async function collectMissionRewards(
   const result: CollectResult = { claimed: [], skipped: [], failed: [] };
   for (const m of candidates) {
     const r = await claimMission(ctx, csrf, m.id);
-    if (r.success) result.claimed.push(m.id);
+    if (r.success) result.claimed.push({ id: m.id, title: m.title });
     else result.failed.push({ missionId: m.id, status: r.status });
   }
   return result;

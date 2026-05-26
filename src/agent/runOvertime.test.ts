@@ -81,7 +81,7 @@ describe('runOvertimeIfEligible', () => {
     expect(cap.calls).toEqual([]); // silent reconciliation
   });
 
-  it('go: marks completedActions agent + emits success notification', async () => {
+  it('go: marks completedActions agent and is silent (digest emits the OT line)', async () => {
     const s = emptyState(6755);
     getJobData.mockResolvedValue({
       isEmployee: true,
@@ -104,8 +104,11 @@ describe('runOvertimeIfEligible', () => {
       at: FIXED_NOW.toISOString(),
       source: 'agent',
     });
-    // `+` is MarkdownV2-reserved → escaped at the boundary.
-    expect(cap.calls).toEqual(['💼 OT: \\+7425 LTL']);
+    // Success path no longer fires a standalone Telegram message — the
+    // runner aggregates it into the end-of-cycle batch digest so we don't
+    // double-notify the operator. The decision/netSalary/currency in `out`
+    // is what the runner reads to compose the OT digest line.
+    expect(cap.calls).toEqual([]);
   });
 
   it('go but clean-precondition failure → mark cap + alert', async () => {

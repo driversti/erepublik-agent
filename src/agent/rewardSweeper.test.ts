@@ -24,7 +24,15 @@ describe('applyMissionSweepResult', () => {
   it('appends new claimed mission IDs without duplicates', () => {
     const state = emptyDaily();
     state.claimedMissionIds = [1, 2];
-    applyMissionSweepResult(state, { claimed: [2, 3, 4], skipped: [], failed: [] });
+    applyMissionSweepResult(state, {
+      claimed: [
+        { id: 2, title: 'dup' },
+        { id: 3, title: 'three' },
+        { id: 4, title: 'four' },
+      ],
+      skipped: [],
+      failed: [],
+    });
     expect(state.claimedMissionIds).toEqual([1, 2, 3, 4]);
   });
 

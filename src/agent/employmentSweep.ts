@@ -39,6 +39,9 @@ export interface EmploymentSweepResult {
   salary?: number;
   netSalary?: number;
   currency?: string;
+  /** Pre-upgrade net wage, only populated on `action: 'upgraded'`. Lets the
+   *  runner render a `from → to` digest line without re-fetching the market. */
+  previousNetSalary?: number;
 }
 
 /**
@@ -74,14 +77,12 @@ export async function runEmploymentSweep(
     if (ensure.action === 'applied') {
       state.notifiedNoJobToday = false;
       const wage = ensure.netSalary ?? ensure.salary ?? 0;
-      const msg =
-        `💼 auto-employ: hired by ${ensure.employerName} ` +
-        `for ${wage} ${ensure.currency ?? ''}`.trim();
-      console.log(`[cycle] ${msg}`);
-      // notifier.send uses MarkdownV2 — escape the whole message so reserved
-      // chars (`-`, `+`, `.`, `=` etc.) inside emojis-free literal text don't
-      // crash the parser. Emojis pass through escapeMdV2 unchanged.
-      await opts.notify(escapeMdV2(msg));
+      // Console-log the hire for the local journal, but skip the per-event
+      // Telegram message — successful hires are now surfaced once per cycle
+      // by the end-of-cycle batch digest ([[feedback_telegram_batch_digest]]).
+      console.log(
+        `[cycle] 💼 auto-employ: hired by ${ensure.employerName} for ${wage} ${ensure.currency ?? ''}`.trim(),
+      );
       return {
         employed: true,
         action: 'applied',
@@ -160,11 +161,12 @@ async function maybeUpgradeJob(
     await opts.notify(escapeMdV2(msg));
     return { employed: false, action: 'upgrade_failed', reason: applied.message ?? `status=${applied.status}` };
   }
-  const msg =
-    `📈 auto-upgrade: ${decision.currentNetSalary} → ${target.netSalary} ${target.currency} ` +
-    `(hired by ${target.citizen.name})`;
-  console.log(`[cycle] ${msg}`);
-  await opts.notify(escapeMdV2(msg));
+  // Console-log the upgrade for the local journal; the Telegram surface is
+  // the end-of-cycle batch digest ([[feedback_telegram_batch_digest]]) which
+  // emits a single `📈 Job upgrade` line built from this return value.
+  console.log(
+    `[cycle] 📈 auto-upgrade: ${decision.currentNetSalary} → ${target.netSalary} ${target.currency} (hired by ${target.citizen.name})`,
+  );
   return {
     employed: true,
     action: 'upgraded',
@@ -172,5 +174,9 @@ async function maybeUpgradeJob(
     salary: target.salary,
     netSalary: target.netSalary,
     currency: target.currency,
+    /** Pre-upgrade net wage from the market response — used by the runner to
+     *  render the `📈 Job upgrade: from → to` digest line. Falls back to
+     *  `undefined` (not null) so it matches the interface field shape. */
+    previousNetSalary: decision.currentNetSalary ?? undefined,
   };
 }

@@ -3,6 +3,7 @@ import type { DailyState } from '../memory/schema.js';
 import type { WeeklyState } from '../memory/weeklyState.js';
 import {
   collectMissionRewards,
+  type ClaimedMission,
   type CollectResult as CollectMissionsResult,
 } from '../tools/claim.js';
 import {
@@ -23,7 +24,11 @@ import {
  *   1. Calls the per-domain `collect…` tool.
  *   2. Merges newly-claimed IDs into the supplied state (via the pure
  *      `apply…SweepResult` helpers, which are testable in isolation).
- *   3. Reports a per-sweep summary via the supplied `onLog` / `onError`
+ *   3. Returns a typed report describing *what was claimed this call* so the
+ *      runner can fan out per-claim events into the cycle digest. The list is
+ *      narrower than the cumulative state — exactly the new claims, with the
+ *      title/threshold/tier metadata needed for Telegram.
+ *   4. Reports a per-sweep summary via the supplied `onLog` / `onError`
  *      callbacks so the runner can fan out to console + electron bridge.
  *
  * Errors thrown by individual sweeps are caught and routed through `onError`
@@ -35,11 +40,30 @@ export interface SweeperLogger {
   error: (message: string) => void;
 }
 
+/** Per-cycle "what did the missions sweep just claim?" — drives the digest. */
+export interface MissionSweepReport {
+  claimed: ClaimedMission[];
+}
+/** Per-cycle "what did the chest sweep just claim?" — `threshold` values. */
+export interface ObjectiveSweepReport {
+  claimed: number[];
+}
+/** Per-cycle "did the weekly sweep tick a new tier?" — null = nothing claimed. */
+export interface WeeklySweepReport {
+  claimedTier: number | null;
+}
+
+export interface RewardSweepsReport {
+  missions: MissionSweepReport;
+  objectives: ObjectiveSweepReport;
+  weekly: WeeklySweepReport;
+}
+
 // ── Pure state-merge helpers (covered by unit tests) ────────────────────────
 
 export function applyMissionSweepResult(state: DailyState, result: CollectMissionsResult): void {
-  for (const id of result.claimed) {
-    if (!state.claimedMissionIds.includes(id)) state.claimedMissionIds.push(id);
+  for (const m of result.claimed) {
+    if (!state.claimedMissionIds.includes(m.id)) state.claimedMissionIds.push(m.id);
   }
 }
 
@@ -62,17 +86,20 @@ export async function sweepMissions(
   csrf: string,
   state: DailyState,
   logger: SweeperLogger,
-): Promise<void> {
+): Promise<MissionSweepReport> {
   try {
     const r = await collectMissionRewards(ctx, csrf, state.claimedMissionIds);
     applyMissionSweepResult(state, r);
     if (r.claimed.length || r.failed.length) {
+      const ids = r.claimed.map((c) => c.id).join(', ');
       logger.log(
-        `[cycle] missions sweep: claimed=[${r.claimed.join(', ')}] failed=${r.failed.length}`,
+        `[cycle] missions sweep: claimed=[${ids}] failed=${r.failed.length}`,
       );
     }
+    return { claimed: r.claimed };
   } catch (err) {
     logger.error(`[cycle] collectMissionRewards threw: ${(err as Error).message}`);
+    return { claimed: [] };
   }
 }
 
@@ -81,7 +108,7 @@ export async function sweepObjectives(
   csrf: string,
   state: DailyState,
   logger: SweeperLogger,
-): Promise<void> {
+): Promise<ObjectiveSweepReport> {
   try {
     const r = await collectObjectiveRewards(ctx, csrf, state.claimedChestThresholds);
     applyObjectiveSweepResult(state, r);
@@ -90,8 +117,10 @@ export async function sweepObjectives(
         `[cycle] objectives sweep: claimed=[${r.claimed.join(', ')}] failed=${r.failed.length}`,
       );
     }
+    return { claimed: r.claimed };
   } catch (err) {
     logger.error(`[cycle] collectObjectiveRewards threw: ${(err as Error).message}`);
+    return { claimed: [] };
   }
 }
 
@@ -100,17 +129,29 @@ export async function sweepWeekly(
   csrf: string,
   weekly: WeeklyState,
   logger: SweeperLogger,
-): Promise<void> {
+): Promise<WeeklySweepReport> {
   try {
+    // Remember the highest tier we'd already claimed BEFORE the sweep so we
+    // can tell whether this call actually crossed any new ground — the merge
+    // helper overwrites `weekly.lastClaimedRewardId` without preserving the
+    // delta.
+    const beforeTier = weekly.lastClaimedRewardId;
     const r = await collectWeeklyChallenge(ctx, csrf, weekly.lastClaimedRewardId);
     applyWeeklySweepResult(weekly, r);
     if (r.claimed && r.maxRewardId != null) {
       logger.log(`[cycle] weekly sweep: claimed up to ${r.maxRewardId}`);
-    } else if (r.reason) {
+      return {
+        claimedTier:
+          r.maxRewardId !== beforeTier ? r.maxRewardId : null,
+      };
+    }
+    if (r.reason) {
       logger.log(`[cycle] weekly sweep: noop (${r.reason})`);
     }
+    return { claimedTier: null };
   } catch (err) {
     logger.error(`[cycle] collectWeeklyChallenge threw: ${(err as Error).message}`);
+    return { claimedTier: null };
   }
 }
 
@@ -124,8 +165,9 @@ export async function runRewardSweeps(
   state: DailyState,
   weekly: WeeklyState,
   logger: SweeperLogger,
-): Promise<void> {
-  await sweepMissions(ctx, csrf, state, logger);
-  await sweepObjectives(ctx, csrf, state, logger);
-  await sweepWeekly(ctx, csrf, weekly, logger);
+): Promise<RewardSweepsReport> {
+  const missions = await sweepMissions(ctx, csrf, state, logger);
+  const objectives = await sweepObjectives(ctx, csrf, state, logger);
+  const weeklyR = await sweepWeekly(ctx, csrf, weekly, logger);
+  return { missions, objectives, weekly: weeklyR };
 }

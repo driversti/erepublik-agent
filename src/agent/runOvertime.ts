@@ -82,8 +82,9 @@ export async function runOvertimeIfEligible(
         }
         const net = post.result?.netSalary ?? null;
         const cur = post.result?.currency ?? null;
-        const tag = net != null && cur != null ? `+${net} ${cur}` : 'success';
-        await opts.notify(escapeMdV2(`💼 OT: ${tag}`));
+        // OT success is surfaced via the runner's end-of-cycle batch digest
+        // ([[feedback_telegram_batch_digest]]). Sending a separate Telegram
+        // message here would double-notify the operator.
         return { decision, post, netSalary: net, currency: cur };
       }
       // All client-side preconditions were clean (points, energy, cooldown,

@@ -24,7 +24,7 @@ import { runEmploymentSweep } from './employmentSweep.js';
 import { runOvertimeIfEligible } from './runOvertime.js';
 import { getJobData } from '../tools/workOvertime.js';
 import { runRewardSweeps } from './rewardSweeper.js';
-import { digestHash, formatDigest } from './digests.js';
+import { formatBatchDigest, type CycleEvent } from './cycleEvents.js';
 import { initAppEnvironment } from './appInit.js';
 import { defaultStateProviders, type StateProviders } from './stateProviders.js';
 import { reconcileSpentWithInventory } from '../memory/weeklyFuelState.js';
@@ -89,6 +89,10 @@ async function runCycle(
   uiSnapshot.day = day;
   let lastDecisionReason: string | null = null;
   let lastWeekFuelTarget = 0;
+  // Per-cycle event accumulator → rendered into a single batch Telegram
+  // message at the end of the cycle ([[feedback_telegram_batch_digest]]).
+  // Only successful events are pushed; failures stay as real-time alerts.
+  const events: CycleEvent[] = [];
   const { state, rolledOver } = providers.loadDaily(day);
   const weekly = providers.loadWeekly();
   const { state: fuel, rolledOver: fuelRolled } = providers.loadFuel();
@@ -227,6 +231,24 @@ async function runCycle(
       jobUpgrade: settings.jobUpgrade,
       notify: (m) => notifier.send(m),
     });
+    // Surface successful hire / job-upgrade in the end-of-cycle batch digest
+    // (sweep itself no longer fires standalone Telegram messages for these).
+    if (employment.action === 'applied' && employment.employerName) {
+      events.push({
+        kind: 'employed',
+        employerName: employment.employerName,
+        netSalary: employment.netSalary ?? null,
+        currency: employment.currency ?? null,
+      });
+    } else if (employment.action === 'upgraded' && employment.employerName && employment.currency && employment.netSalary != null) {
+      events.push({
+        kind: 'jobUpgrade',
+        fromNet: employment.previousNetSalary ?? null,
+        toNet: employment.netSalary,
+        currency: employment.currency,
+        employerName: employment.employerName,
+      });
+    }
 
     if (shortCircuit) {
       console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — nothing to do');
@@ -251,7 +273,8 @@ async function runCycle(
         try {
           // countryId is guaranteed non-null here: the null-guard above throws
           // before we reach this point, but TS can't narrow across async closures.
-          await runAction(action, ctx, csrf, countryId!, state, runActionOpts);
+          const evt = await runAction(action, ctx, csrf, countryId!, state, runActionOpts);
+          if (evt) events.push(evt);
         } catch (err) {
           const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
           console.error(msg);
@@ -305,6 +328,13 @@ async function runCycle(
             tag = ot.netSalary != null
               ? `✅ +${ot.netSalary} ${ot.currency}`
               : '✅ success';
+            // Surface OT success in the end-of-cycle batch digest. The OT
+            // orchestrator itself no longer notifies (see runOvertime.ts).
+            events.push({
+              kind: 'overtime',
+              netSalary: ot.netSalary ?? null,
+              currency: ot.currency ?? null,
+            });
           } else {
             // Server rejected even though our client-side preconditions were
             // clean. Don't claim "employer cap" — we don't actually know that.
@@ -326,13 +356,26 @@ async function runCycle(
 
       // 2. Idempotent sweeps — safe to call even when nothing is claimable.
       //    See `rewardSweeper.ts` for the per-sweep error isolation policy.
-      await runRewardSweeps(ctx, csrf, state, weekly, {
+      const sweepReport = await runRewardSweeps(ctx, csrf, state, weekly, {
         log: (msg) => console.log(msg),
         error: (msg) => {
           console.error(msg);
           bridge.emitLog('error', msg);
         },
       });
+      // Fan out each freshly-claimed reward into the per-cycle digest. The
+      // sweep report deliberately only carries NEW claims (it diffs against
+      // the prior state before mutating), so duplicates from a no-op cycle
+      // never reach Telegram.
+      for (const m of sweepReport.missions.claimed) {
+        events.push({ kind: 'mission', id: m.id, title: m.title });
+      }
+      for (const threshold of sweepReport.objectives.claimed) {
+        events.push({ kind: 'chest', threshold });
+      }
+      if (sweepReport.weekly.claimedTier != null) {
+        events.push({ kind: 'weeklyChallenge', tier: sweepReport.weekly.claimedTier });
+      }
     }
 
     // ── Farm gate ─────────────────────────────────────────────────────────────
@@ -629,16 +672,22 @@ async function runCycle(
   uiSnapshot.lastFarmReason = lastDecisionReason;
   uiSnapshot.lastError = null;
 
-  // Hash the rendered text (not the raw state) so identical-looking digests
-  // don't get resent because of a flapping hidden field like `fuel.lastFarmedAt`
-  // or `state.awaySince`. Contract: same message → no resend.
-  const digest = formatDigest(day, state, weekly, fuel, settings.weeklyFuelBudget, settings.buyGold);
-  const hash = digestHash(digest);
-  if (hash !== state.lastDigestHash) {
-    console.log('[cycle] digest:\n' + digest);
-    await notifier.send(digest);
-    state.lastDigestHash = hash;
-    providers.saveDaily(state);
+  // End-of-cycle batch digest. The runner emits a Telegram message ONLY when
+  // something happened this cycle (an action ran or a reward was claimed).
+  // Empty cycles stay silent — no more "identical digest re-sent because a
+  // hidden field flapped" noise ([[feedback_telegram_batch_digest]]).
+  const batch = formatBatchDigest(events, {
+    day,
+    fuel: {
+      week: fuel.week,
+      spent: fuel.spent,
+      budget: settings.weeklyFuelBudget,
+      hits: fuel.hitsLanded,
+    },
+  });
+  if (batch != null) {
+    console.log('[cycle] digest:\n' + batch);
+    await notifier.send(batch);
   }
 
   appendHistory({
