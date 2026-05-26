@@ -36,11 +36,15 @@ export async function sendUpdateNotification(version: string, userDataDir: strin
     disable_web_page_preview: 'true',
   });
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
     });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.warn('[telegram] update notification failed:', res.status, detail);
+    }
   } catch (err) {
     console.warn('[telegram] update notification failed:', err);
   }

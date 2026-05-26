@@ -63,4 +63,23 @@ describe('sendUpdateNotification', () => {
 
     await expect(sendUpdateNotification('1.2.3', tmpDir)).resolves.toBeUndefined();
   });
+
+  it('warns on non-2xx responses without throwing', async () => {
+    await fs.mkdir(path.join(tmpDir, 'config'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, 'config', '.env'),
+      'TELEGRAM_BOT_TOKEN=bad\nTELEGRAM_CHAT_ID=999\n',
+    );
+    fetchSpy.mockResolvedValueOnce(new Response('{"ok":false,"error":"Unauthorized"}', { status: 401 }));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(sendUpdateNotification('1.2.3', tmpDir)).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[telegram] update notification failed:',
+      401,
+      expect.stringContaining('Unauthorized'),
+    );
+
+    warnSpy.mockRestore();
+  });
 });
