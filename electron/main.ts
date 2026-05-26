@@ -245,6 +245,16 @@ app.whenReady().then(() => {
     return { ok: true };
   });
 
+  ipcMain.handle('update:getStatus', () => updateReady);
+
+  ipcMain.handle('update:restartNow', async () => {
+    isQuitting = true;
+    updaterHandle.dispose();
+    await supervisor.stop();
+    tray?.destroy();
+    quitAndInstall();
+  });
+
   ipcMain.handle('wizard:startBootstrap', async (event) => {
     const userData = app.getPath('userData');
     const bootstrapPath = path.resolve(__dirname, '../dist/bootstrap.js');
