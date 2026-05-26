@@ -7,6 +7,7 @@ import { dialog, app, type BrowserWindow } from 'electron';
 export interface UpdaterCallbacks {
   onUpdateAvailable: (version: string) => void;
   onUpdateNotAvailable: () => void;
+  onUpdateDownloaded: (version: string) => void;
   onError: (err: Error) => void;
 }
 
@@ -25,6 +26,9 @@ export function configureUpdater(cb: UpdaterCallbacks): UpdaterHandle {
   });
   autoUpdater.on('update-not-available', () => {
     cb.onUpdateNotAvailable();
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    cb.onUpdateDownloaded(info.version);
   });
   autoUpdater.on('error', (err) => {
     console.error('[updater]', err);
@@ -94,4 +98,8 @@ export function showManualResultDialog(parentWindow: BrowserWindow | undefined, 
   } else {
     dialog.showMessageBox(opts);
   }
+}
+
+export function quitAndInstall(): void {
+  autoUpdater.quitAndInstall();
 }

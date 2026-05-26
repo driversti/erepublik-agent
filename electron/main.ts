@@ -6,7 +6,8 @@ import fs from 'node:fs/promises';
 import { createRunnerSupervisor } from './runnerSupervisor.js';
 import { createTray, openLogsFolder } from './tray.js';
 import { checkFirstRun } from './firstRun.js';
-import { configureUpdater, manualCheck, showManualResultDialog } from './updater.js';
+import { configureUpdater, manualCheck, showManualResultDialog, quitAndInstall } from './updater.js';
+import { sendUpdateNotification } from './telegram.js';
 import { detectLegacyInstall, copyLegacyData, runImportedHealthcheck } from './importLegacy.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +24,7 @@ let wizardWindow: BrowserWindow | undefined;
 let tray: ReturnType<typeof createTray> | undefined;
 let isQuitting = false;
 let isPaused = false;
+let updateReady: { version: string } | null = null;
 const supervisor = createRunnerSupervisor();
 
 function createWizardWindow() {
@@ -116,9 +118,20 @@ app.whenReady().then(() => {
   // the (still-undefined) module-level `tray` from inside them is safe.
   const updaterHandle = configureUpdater({
     onUpdateAvailable: (v) => {
-      tray?.showBalloon('erepublik-agent', `Update available: v${v}. Quit to install.`);
+      tray?.showBalloon('erepublik-agent', `Update available: v${v}. Downloading…`);
     },
     onUpdateNotAvailable: () => {},
+    onUpdateDownloaded: (v) => {
+      updateReady = { version: v };
+      dashboardWindow?.webContents.send('update:ready', { version: v });
+      sendUpdateNotification(v, app.getPath('userData')).catch((err) =>
+        console.warn('[updater] telegram send failed:', err),
+      );
+      tray?.showBalloon(
+        'erepublik-agent',
+        `Update v${v} downloaded. Open dashboard → Restart now.`,
+      );
+    },
     onError: (err) => {
       console.warn('[updater]', err.message);
     },
@@ -230,6 +243,16 @@ app.whenReady().then(() => {
     ];
     await fs.writeFile(path.join(userData, 'config', '.env'), envLines.join('\n'));
     return { ok: true };
+  });
+
+  ipcMain.handle('update:getStatus', () => updateReady);
+
+  ipcMain.handle('update:restartNow', async () => {
+    isQuitting = true;
+    updaterHandle.dispose();
+    await supervisor.stop();
+    tray?.destroy();
+    quitAndInstall();
   });
 
   ipcMain.handle('wizard:startBootstrap', async (event) => {

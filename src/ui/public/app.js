@@ -358,3 +358,39 @@ function renderSettingsForm(s) {
 
 bindControls();
 bindRunNowButton();
+
+function showUpdateBanner(version) {
+  const versionEl = document.getElementById('update-version');
+  const bannerEl = document.getElementById('update-banner');
+  if (!versionEl || !bannerEl) return;
+  versionEl.textContent = `v${version}`;
+  bannerEl.classList.remove('hidden');
+}
+
+async function initUpdateBanner() {
+  if (!window.electronAPI || !window.electronAPI.getUpdateStatus) {
+    return; // running in a plain browser, not inside the Electron window
+  }
+  try {
+    const status = await window.electronAPI.getUpdateStatus();
+    if (status && status.version) showUpdateBanner(status.version);
+  } catch (err) {
+    console.warn('[update-banner] getUpdateStatus failed:', err);
+  }
+  window.electronAPI.onUpdateReady?.(({ version }) => showUpdateBanner(version));
+
+  const restartBtn = document.getElementById('update-restart');
+  if (restartBtn) {
+    restartBtn.addEventListener('click', () => {
+      window.electronAPI.restartNow();
+    });
+  }
+  const laterBtn = document.getElementById('update-later');
+  if (laterBtn) {
+    laterBtn.addEventListener('click', () => {
+      document.getElementById('update-banner')?.classList.add('hidden');
+    });
+  }
+}
+
+initUpdateBanner();
