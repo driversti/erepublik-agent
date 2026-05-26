@@ -69,6 +69,25 @@ initAppEnvironment({ fileLoggingEnabled: env.ERP_FILE_LOGGING === 'true' });
 const args = new Set(process.argv.slice(2));
 const ONCE = args.has('--once');
 
+// Transient Chromium / Playwright failures from page.goto (DNS hiccup, TCP reset,
+// network blip). They self-heal on the next cycle, so we still log and record
+// them in history but skip the Telegram alert to avoid notification spam.
+const TRANSIENT_NETWORK_PATTERNS = [
+  'net::ERR_CONNECTION_CLOSED',
+  'net::ERR_CONNECTION_RESET',
+  'net::ERR_CONNECTION_REFUSED',
+  'net::ERR_CONNECTION_TIMED_OUT',
+  'net::ERR_NETWORK_CHANGED',
+  'net::ERR_TIMED_OUT',
+  'net::ERR_INTERNET_DISCONNECTED',
+  'net::ERR_NAME_NOT_RESOLVED',
+  'net::ERR_EMPTY_RESPONSE',
+];
+
+function isTransientNetworkError(message: string): boolean {
+  return TRANSIENT_NETWORK_PATTERNS.some((p) => message.includes(p));
+}
+
 
 /**
  * Run one daily cycle. Uses the module-level `bridge` (electronBridge)
@@ -762,7 +781,9 @@ try {
       const msg = `[cycle] failed: ${message}`;
       console.error(msg);
       bridge.emitLog('error', msg);
-      await notifier.sendError(message);
+      if (!isTransientNetworkError(message)) {
+        await notifier.sendError(message);
+      }
       appendHistory({ type: 'error', message });
       uiSnapshot.lastError = message;
     }
