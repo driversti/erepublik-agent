@@ -99,3 +99,7 @@ export function showManualResultDialog(parentWindow: BrowserWindow | undefined, 
     dialog.showMessageBox(opts);
   }
 }
+
+export function quitAndInstall(): void {
+  autoUpdater.quitAndInstall();
+}

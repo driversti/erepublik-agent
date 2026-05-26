@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { checkForUpdates, onSpy } = vi.hoisted(() => ({
+const { checkForUpdates, onSpy, quitAndInstallSpy } = vi.hoisted(() => ({
   checkForUpdates: vi.fn(),
   onSpy: vi.fn(),
+  quitAndInstallSpy: vi.fn(),
 }));
 
 vi.mock('electron-updater', () => ({
@@ -12,6 +13,7 @@ vi.mock('electron-updater', () => ({
       autoInstallOnAppQuit: false,
       checkForUpdates,
       on: onSpy,
+      quitAndInstall: quitAndInstallSpy,
     },
   },
 }));
@@ -21,7 +23,7 @@ vi.mock('electron', () => ({
   app: { getVersion: () => '0.2.0' },
 }));
 
-import { configureUpdater } from './updater.js';
+import { configureUpdater, quitAndInstall } from './updater.js';
 
 describe('configureUpdater', () => {
   beforeEach(() => {
@@ -29,6 +31,7 @@ describe('configureUpdater', () => {
     checkForUpdates.mockReset();
     checkForUpdates.mockResolvedValue(undefined);
     onSpy.mockReset();
+    quitAndInstallSpy.mockReset();
   });
 
   afterEach(() => {
@@ -114,5 +117,10 @@ describe('configureUpdater', () => {
     handler({ version: '1.2.3' });
 
     expect(onUpdateDownloaded).toHaveBeenCalledWith('1.2.3');
+  });
+
+  it('quitAndInstall() proxies to autoUpdater.quitAndInstall', () => {
+    quitAndInstall();
+    expect(quitAndInstallSpy).toHaveBeenCalledTimes(1);
   });
 });
