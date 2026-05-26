@@ -62,6 +62,22 @@ const BuyGoldSettings = z.object({
   amount: z.number().int().min(0).max(10).default(10),
 });
 
+/**
+ * Opt-in: after the daily `work` flag is set, the auto-employ sweep may also
+ * resign + apply when a strictly-better offer appears on the market. Both the
+ * absolute and relative thresholds must be met — the absolute floor avoids
+ * trivial bumps on low-wage markets, the relative floor avoids chasing tiny
+ * deltas on high-wage ones. Disabled by default.
+ *
+ * Only fires when today's `work` has already been done — switching employers
+ * mid-day before working there forfeits the wage from the now-old employer.
+ */
+const JobUpgradeSettings = z.object({
+  enabled: z.boolean().default(false),
+  minNetSalaryDelta: z.number().min(0).default(50),
+  minRelativeImprovement: z.number().min(0).default(0.05),
+});
+
 const DetectedState = z.object({
   division: z.number().int().nullable().default(null),
   hasMaverick: z.boolean().nullable().default(null),
@@ -127,6 +143,11 @@ export const Settings = z.object({
     mode: 'once-per-day' as const,
   })),
   buyGold: BuyGoldSettings.default(() => ({ enabled: false, amount: 10 })),
+  jobUpgrade: JobUpgradeSettings.default(() => ({
+    enabled: false,
+    minNetSalaryDelta: 50,
+    minRelativeImprovement: 0.05,
+  })),
   detected: DetectedState.default(() => ({
     division: null,
     hasMaverick: null,

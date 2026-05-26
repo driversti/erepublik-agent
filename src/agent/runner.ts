@@ -20,7 +20,9 @@ import { getWeeklyChallenge } from '../tools/weekly.js';
 import { TelegramNotifier } from '../telegram/notifier.js';
 import { escapeMdV2 } from '../telegram/mdV2.js';
 import { runAction } from './actions.js';
+import { runEmploymentSweep } from './employmentSweep.js';
 import { runOvertimeIfEligible } from './runOvertime.js';
+import { getJobData } from '../tools/workOvertime.js';
 import { runRewardSweeps } from './rewardSweeper.js';
 import { digestHash, formatDigest } from './digests.js';
 import { initAppEnvironment } from './appInit.js';
@@ -213,6 +215,19 @@ async function runCycle(
     !overtimeStillPending(state, settings.workOvertime);
 
   try {
+    // Auto-employ sweep — runs every cycle (not just when `work` is pending)
+    // so a mid-day resign or firing is detected and healed within
+    // LOOP_INTERVAL_MS instead of waiting for the next 00:00 PST rollover.
+    // The job market is queried for the citizen's CURRENT location country
+    // (not citizenship) — eRepublik only lets you hire where you physically
+    // are. See `kb/Employment_Country.md`.
+    const employmentCountryId = ctxInfo.currentCountryId ?? countryId;
+    const employment = await runEmploymentSweep(ctx, csrf, employmentCountryId, state, {
+      autoEmploy: settings.autoEmploy,
+      jobUpgrade: settings.jobUpgrade,
+      notify: (m) => notifier.send(m),
+    });
+
     if (shortCircuit) {
       console.log('[cycle] ✅ all safe-daily flags set and no unclaimed rewards — nothing to do');
     } else {
@@ -227,7 +242,6 @@ async function runCycle(
       //    in `when-available` mode don't fit the "set flag → never retry"
       //    model the loop relies on.
       const runActionOpts = {
-        autoEmploy: settings.autoEmploy,
         maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
         buyGoldAmount: settings.buyGold.amount,
         notify: (m: string) => notifier.send(m),
@@ -245,7 +259,36 @@ async function runCycle(
         }
       }
 
-      await tryAction('work');
+      // Skip the daily work POST if the auto-employ sweep just confirmed
+      // we have no employer — there's nothing to work for. The flag stays
+      // unset so the next cycle retries after the sweep tries to hire again.
+      if (employment.employed) {
+        // Pre-check via /main/job-data. The eRepublik daily work limit is
+        // once-per-citizen-per-day across all employers — if the player
+        // already worked at a previous employer earlier today (e.g. before
+        // a manual resign + upgrade), `alreadyWorked: true` is set on the
+        // shared job-data response. POSTing /economy/work again would either
+        // silently no-op (`{status:false, message:"already_worked"}`) or, on
+        // some endpoints, return 200 with no payment. Mark the flag as
+        // external and skip the POST instead. See kb/Work_Overtime.md.
+        let alreadyWorked: boolean | null = null;
+        try {
+          const job = await getJobData(ctx, csrf);
+          alreadyWorked = job.alreadyWorked === true;
+        } catch (err) {
+          console.warn(
+            `[cycle] work gate getJobData failed: ${(err as Error).message} — attempting work anyway`,
+          );
+        }
+        if (alreadyWorked === true && state.completedActions.work == null) {
+          state.completedActions.work = { at: new Date().toISOString(), source: 'external' };
+          console.log('[cycle] work: ⏭ already done today per /main/job-data (marked external)');
+        } else {
+          await tryAction('work');
+        }
+      } else {
+        console.log(`[cycle] work: skipped — ${employment.reason ?? employment.action}`);
+      }
       await tryAction('train');
 
       try {
@@ -263,7 +306,11 @@ async function runCycle(
               ? `✅ +${ot.netSalary} ${ot.currency}`
               : '✅ success';
           } else {
-            tag = `⛔ cap (msg=${ot.post?.message ?? 'n/a'})`;
+            // Server rejected even though our client-side preconditions were
+            // clean. Don't claim "employer cap" — we don't actually know that.
+            // Observed messages so far: "lock" (cause unclear; see
+            // kb/Work_Overtime.md). Surface verbatim so the operator can tell.
+            tag = `⛔ rejected (msg=${ot.post?.message ?? 'n/a'})`;
           }
         }
         console.log(`[cycle] workOvertime: ${tag}`);

@@ -66,6 +66,17 @@ export async function workOvertime(ctx: BrowserContext, csrf: string): Promise<O
     form: { action_type: 'workOvertime' },
   });
   const success = body.status === true;
+  // TEMP DIAG (2026-05-26): on any non-success, log the verbatim server body
+  // so we can verify whether `message: "lock"` is actually what the server
+  // returns or whether something in our parsing path is mangling it.
+  // Remove once the cause of OT rejections is understood.
+  if (!success) {
+    try {
+      console.log(`[workOvertime] raw failure body: ${JSON.stringify(body)}`);
+    } catch {
+      console.log(`[workOvertime] raw failure body: <unserializable> typeof=${typeof body}`);
+    }
+  }
   const message =
     typeof body.message === 'string' ? body.message : success ? null : 'unknown';
   return {

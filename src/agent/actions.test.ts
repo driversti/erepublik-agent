@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { emptyState } from '../memory/schema.js';
-import type { Settings } from '../ui/settingsStore.js';
 
 const buyOneGoldFromMarket = vi.fn();
 
@@ -14,7 +13,6 @@ vi.mock('../tools/work.js', () => ({ work: vi.fn() }));
 vi.mock('../tools/train.js', () => ({ train: vi.fn() }));
 vi.mock('../tools/vip.js', () => ({ claimVip: vi.fn() }));
 vi.mock('../tools/market.js', () => ({ buyOneCheapestFood: vi.fn() }));
-vi.mock('../tools/jobMarket.js', () => ({ ensureEmployed: vi.fn() }));
 
 const { runAction } = await import('./actions.js');
 
@@ -24,7 +22,6 @@ function notifyCaptor() {
 }
 
 const baseOpts = (extra: Partial<{ buyGoldAmount: number }> = {}) => ({
-  autoEmploy: false,
   maxFoodPrice: 100,
   buyGoldAmount: 10,
   notify: notifyCaptor().notify,

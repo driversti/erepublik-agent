@@ -108,7 +108,80 @@ export async function resignFromJob(
   return { success: status === 200 && body?.status === true, status, body };
 }
 
-export type EnsureEmployedAction = 'none' | 'applied' | 'no_jobs' | 'foreign_country';
+export interface JobUpgradeOpts {
+  /** Minimum absolute netSalary improvement (in the country's currency) over
+   *  the current employer required to switch. Filters out one-cent bumps. */
+  minNetSalaryDelta: number;
+  /** Minimum relative improvement (e.g. 0.05 = +5%). Combined with the absolute
+   *  delta so both must be satisfied — the absolute floor protects against
+   *  trivial upgrades on low-wage markets where 5% is mere noise. */
+  minRelativeImprovement: number;
+}
+
+export interface JobUpgradeDecision {
+  shouldUpgrade: boolean;
+  best: JobListing | null;
+  currentNetSalary: number | null;
+  reason: string;
+}
+
+/**
+ * Pure decision function: given a freshly-fetched job market response (the
+ * citizen must be employed for this to make sense) and the upgrade thresholds,
+ * decide whether resigning + applying for the best listing is justified.
+ *
+ * Skips the upgrade when:
+ *   - We're not currently employed (caller's mistake to invoke this here).
+ *   - The listing is empty.
+ *   - The best offer is our current employer (a current employer's listing
+ *     may show up on the market when they have an open seat).
+ *   - The absolute delta is below `minNetSalaryDelta`.
+ *   - The relative improvement is below `minRelativeImprovement`.
+ */
+export function evaluateJobUpgrade(
+  market: JobMarketResponse,
+  opts: JobUpgradeOpts,
+): JobUpgradeDecision {
+  const current = market.employer?.netSalary ?? null;
+  const best = pickBestJob(market.jobs);
+  if (current == null) {
+    return { shouldUpgrade: false, best, currentNetSalary: null, reason: 'not currently employed' };
+  }
+  if (best == null) {
+    return { shouldUpgrade: false, best: null, currentNetSalary: current, reason: 'no offers on market' };
+  }
+  if (best.citizen.id === market.employer?.id) {
+    return { shouldUpgrade: false, best, currentNetSalary: current, reason: 'best offer is current employer' };
+  }
+  const absDelta = best.netSalary - current;
+  if (absDelta < opts.minNetSalaryDelta) {
+    return {
+      shouldUpgrade: false,
+      best,
+      currentNetSalary: current,
+      reason: `absolute delta ${absDelta.toFixed(2)} < ${opts.minNetSalaryDelta}`,
+    };
+  }
+  // Guard against zero/negative current; absDelta check above already passed
+  // so current is at least non-zero positive here in practice, but defensive.
+  const relDelta = current > 0 ? absDelta / current : Infinity;
+  if (relDelta < opts.minRelativeImprovement) {
+    return {
+      shouldUpgrade: false,
+      best,
+      currentNetSalary: current,
+      reason: `relative delta ${(relDelta * 100).toFixed(1)}% < ${(opts.minRelativeImprovement * 100).toFixed(1)}%`,
+    };
+  }
+  return {
+    shouldUpgrade: true,
+    best,
+    currentNetSalary: current,
+    reason: `upgrade ${current} → ${best.netSalary} (+${(relDelta * 100).toFixed(1)}%)`,
+  };
+}
+
+export type EnsureEmployedAction = 'none' | 'applied' | 'no_jobs';
 
 export interface EnsureEmployedResult {
   employed: boolean;
@@ -122,34 +195,34 @@ export interface EnsureEmployedResult {
 
 /**
  * Verify the citizen is employed; if not, apply for the highest-salary job
- * available in the given country. Does NOT resign from an existing job — if
- * already employed, returns `{employed:true, action:'none'}` unconditionally.
+ * available in the given country's market. Does NOT resign from an existing
+ * job — if already employed, returns `{employed:true, action:'none'}`.
+ *
+ * **Country selection is the caller's job.** eRepublik only lets you hire on
+ * the market of the country you are *physically in* (your current location,
+ * not your citizenship). Pass `marketCountryId = ctxInfo.currentCountryId`.
+ * See `kb/Employment_Country.md` for the mechanic.
+ *
+ * Note: the previous version bailed early when `market.isFromThisCountry` was
+ * false (interpreted as "you must be a citizen of this country to work here").
+ * That guard was based on a wrong assumption — you can work as a foreigner in
+ * your current country — and is intentionally removed.
  */
 export async function ensureEmployed(
   ctx: BrowserContext,
   csrf: string,
-  countryId: number,
+  marketCountryId: number,
 ): Promise<EnsureEmployedResult> {
-  const market = await getJobMarket(ctx, csrf, countryId, 1, 'desc');
+  const market = await getJobMarket(ctx, csrf, marketCountryId, 1, 'desc');
   if (market.isEmployed) {
     return { employed: true, action: 'none' };
-  }
-  if (!market.isFromThisCountry) {
-    // Job market only employs citizens of the country. If we somehow ended up
-    // querying a foreign market, surface that — the runner shouldn't normally
-    // hit this since it uses ctxInfo.countryId (citizenship).
-    return {
-      employed: false,
-      action: 'foreign_country',
-      reason: `citizen is not from country ${countryId}`,
-    };
   }
   const best = pickBestJob(market.jobs);
   if (best == null) {
     return {
       employed: false,
       action: 'no_jobs',
-      reason: `no job offers available in country ${countryId}`,
+      reason: `no job offers available in country ${marketCountryId}`,
     };
   }
   const result = await applyForJob(ctx, csrf, best.citizen.id, best.salary);

@@ -1,5 +1,4 @@
 import type { BrowserContext } from 'playwright-core';
-import { ensureEmployed } from '../tools/jobMarket.js';
 import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
@@ -8,8 +7,6 @@ import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
 
 export interface RunActionOptions {
-  /** When true, attempt `ensureEmployed` before `work` (for unemployed citizens). */
-  autoEmploy: boolean;
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
   maxFoodPrice: number;
   /** Configured gold amount (1..10). Runner pre-filter ensures we never reach this branch with 0. */
@@ -24,9 +21,9 @@ export interface RunActionOptions {
  * `state.completedActions` on success. Errors propagate to the caller, which
  * already wraps each invocation in a per-action try/catch.
  *
- * Extracted from `runner.ts` so the daily-action policy lives next to the
- * action tools (`tools/work.ts`, `tools/train.ts`, …) rather than co-mingled
- * with the cycle orchestration, fuel gate, captcha, and UI snapshot logic.
+ * Auto-employment is handled separately by `runEmploymentSweep` in the runner,
+ * which fires every cycle so a mid-day resign is healed within LOOP_INTERVAL_MS.
+ * The runner gates the `work` branch on the sweep's `employed` result.
  */
 export async function runAction(
   action: ActiveSafeDailyKey,
@@ -38,30 +35,6 @@ export async function runAction(
 ): Promise<void> {
   const at = new Date().toISOString();
   if (action === 'work') {
-    if (opts.autoEmploy) {
-      try {
-        const ensure = await ensureEmployed(ctx, csrf, countryId);
-        if (ensure.action === 'applied') {
-          state.notifiedNoJobToday = false;
-          const wage = ensure.netSalary ?? ensure.salary;
-          const msg =
-            `💼 auto-employ: hired by ${ensure.employerName} ` +
-            `for ${wage} ${ensure.currency ?? ''}`.trim();
-          console.log(`[cycle] ${msg}`);
-          await opts.notify(msg);
-        } else if (ensure.action === 'no_jobs' || ensure.action === 'foreign_country') {
-          const reason = ensure.reason ?? ensure.action;
-          console.log(`[cycle] work: skipped — ${reason}`);
-          if (!state.notifiedNoJobToday) {
-            await opts.notify(`⚠️ work skipped — ${reason}`);
-            state.notifiedNoJobToday = true;
-          }
-          return;
-        }
-      } catch (err) {
-        console.warn(`[cycle] ensureEmployed threw: ${(err as Error).message} — attempting work anyway`);
-      }
-    }
     const r = await work(ctx, csrf);
     if (r.success) state.completedActions.work = { at, source: 'agent' };
     console.log(`[cycle] work: ${r.success ? '✅' : '❌'} status=${r.status}`);

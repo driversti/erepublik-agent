@@ -126,7 +126,12 @@ describe('runOvertimeIfEligible', () => {
     );
     expect(out.decision).toEqual({ kind: 'go' });
     expect(s.overtimeCapReachedAt).toBe(FIXED_NOW.toISOString());
-    expect(cap.calls).toEqual(['⛔ overtime: employer cap reached — paused until day rollover']);
+    // Telegram text is MDv2-escaped + surfaces the literal server message
+    // so operators can tell variants apart (e.g. "lock" vs others) without
+    // a code change. The literal `=` and `"` are reserved in MDv2.
+    expect(cap.calls).toEqual([
+      '⛔ overtime rejected by server \\(msg\\="something else the server returned"\\) — paused until day rollover',
+    ]);
   });
 
   it('skip-cooldown when flag already set (does not double-reconcile)', async () => {

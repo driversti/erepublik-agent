@@ -86,9 +86,18 @@ export async function runOvertimeIfEligible(
         await opts.notify(escapeMdV2(`💼 OT: ${tag}`));
         return { decision, post, netSalary: net, currency: cur };
       }
-      // All client-side preconditions were clean → treat as cap.
+      // All client-side preconditions were clean (points, energy, cooldown,
+      // employment all OK per /main/job-data), yet the server still rejected.
+      // We don't actually know it's an employer cap — observed cases include
+      // a literal "lock" message of unclear cause (see kb/Work_Overtime.md).
+      // Pause OT for the day either way (retrying inside the same day burns
+      // requests without changing the outcome and risks tripping flags).
       state.overtimeCapReachedAt = nowIso;
-      await opts.notify(escapeMdV2('⛔ overtime: employer cap reached — paused until day rollover'));
+      await opts.notify(
+        escapeMdV2(
+          `⛔ overtime rejected by server (msg="${post.message ?? 'n/a'}") — paused until day rollover`,
+        ),
+      );
       return { decision, post };
     }
 
