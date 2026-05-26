@@ -25,6 +25,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('wizard:importProgress', listener);
     return () => ipcRenderer.removeListener('wizard:importProgress', listener);
   },
+  // Update notifications
+  getUpdateStatus: () => ipcRenderer.invoke('update:getStatus'),
+  restartNow: () => ipcRenderer.invoke('update:restartNow'),
+  onUpdateReady: (cb) => {
+    const listener = (_, payload) => cb(payload);
+    ipcRenderer.on('update:ready', listener);
+    return () => ipcRenderer.removeListener('update:ready', listener);
+  },
 });
 
 // Confirm load via console — visible in DevTools if it ran.
