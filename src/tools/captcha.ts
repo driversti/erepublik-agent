@@ -221,7 +221,7 @@ export async function handleCaptchaIfPresent(
     return { detected: true, solved: false, attempts: 0, reason };
   }
 
-  const maxAttempts = Math.max(1, cfg.maxAttempts ?? 3);
+  const maxAttempts = Math.max(1, cfg.maxAttempts ?? 10);
   let lastErr: string | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {

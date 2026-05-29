@@ -54,7 +54,7 @@ const Env = z.object({
   TELEGRAM_CHAT_ID: z.string().optional(),
   ERP_CAPTCHA_PROVIDER: z.enum(['none', '2captcha']).default('none'),
   ERP_CAPTCHA_API_KEY: z.string().optional(),
-  ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  ERP_CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   // ERP_RETURN_HOME_AFTER_MINUTES and ERP_RETURN_HOME_MAX_CC are seed-only:
   // they populate `settings.travel.*` on first run (see `settingsStore.ts`).
   // The runner reads from settings.json at runtime so UI edits take effect.
