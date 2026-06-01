@@ -205,6 +205,25 @@ describe('runOvertimeIfEligible', () => {
     ]);
   });
 
+  it('lock + captcha present but unsolved → increments counter (no reset), no pause below limit', async () => {
+    const s = stateWithWork(6755);
+    s.overtimeLockRetries = 1;
+    getJobData.mockResolvedValue({
+      isEmployee: true,
+      overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
+    });
+    workOvertime.mockResolvedValue({ success: false, httpStatus: 200, message: 'lock', result: null });
+    const cap = notifyCaptor();
+    const recheckCaptcha = vi.fn().mockResolvedValue({ present: true, solved: false });
+    const out = await runOvertimeIfEligible(
+      {} as any, 'csrf', s, settings(), { notify: cap.notify, now: fixedNow, recheckCaptcha },
+    );
+    expect(s.overtimeLockRetries).toBe(2);
+    expect(s.overtimeCapReachedAt).toBeNull();
+    expect(out.lock).toEqual({ captchaSolved: false, retries: 2, paused: false, limit: 5 });
+    expect(cap.calls).toEqual([]);
+  });
+
   it('lock with recheckCaptcha omitted: defaults to unsolved (counter climbs, no pause below limit)', async () => {
     const s = stateWithWork(6755);
     s.overtimeLockRetries = 0;

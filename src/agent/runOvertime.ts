@@ -30,6 +30,8 @@ export interface RunOvertimeOptions {
    * Re-check (and, if configured, solve) eRepublik's session-unlock captcha.
    * Invoked only on a `"lock"` rejection. Omitted in callers/tests that don't
    * exercise the lock path; absence degrades to "treat as unsolved".
+   * Any captcha detect/solve Telegram notifications are emitted by the injected
+   * implementation (e.g. `handleCaptchaIfPresent`), not by `runOvertimeIfEligible`.
    */
   recheckCaptcha?: () => Promise<{ present: boolean; solved: boolean }>;
 }

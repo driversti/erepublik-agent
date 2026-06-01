@@ -336,6 +336,12 @@ async function runCycle(
       try {
         const ot = await runOvertimeIfEligible(ctx, csrf, state, settings, {
           notify: (m) => notifier.send(m),
+          recheckCaptcha: async () => {
+            // Reuse the proven detect+solve flow. On a "lock" rejection this
+            // surfaces eRepublik's session-unlock captcha if present.
+            const r = await handleCaptchaIfPresent(ctx, captchaCfg);
+            return { present: r.detected, solved: r.solved };
+          },
         });
         // `go` decision means we POSTed; the orchestrator differentiates
         // success vs. clean-precondition-failure ("cap"). Surface that here
@@ -354,11 +360,15 @@ async function runCycle(
               netSalary: ot.netSalary ?? null,
               currency: ot.currency ?? null,
             });
+          } else if (ot.lock) {
+            tag = ot.lock.captchaSolved
+              ? '⛔ lock — captcha solved, will retry'
+              : ot.lock.paused
+                ? `⛔ lock — retry limit hit (${ot.lock.retries}/${ot.lock.limit}), paused until rollover`
+                : `⛔ lock — no captcha solved, retry ${ot.lock.retries}/${ot.lock.limit}`;
           } else {
             // Server rejected even though our client-side preconditions were
             // clean. Don't claim "employer cap" — we don't actually know that.
-            // Observed messages so far: "lock" (cause unclear; see
-            // kb/Work_Overtime.md). Surface verbatim so the operator can tell.
             tag = `⛔ rejected (msg=${ot.post?.message ?? 'n/a'})`;
           }
         }

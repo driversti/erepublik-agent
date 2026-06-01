@@ -48,6 +48,9 @@ export const DailyState = z.object({
    * captcha was NOT found-and-solved. Reset to 0 when a captcha is solved.
    * Once it reaches `LOCK_RETRY_LIMIT` (see runOvertime.ts) the orchestrator
    * sets `overtimeCapReachedAt` (pause until rollover). Fresh on day rollover.
+   * (The reset only matters below the limit; once the cap is set, the
+   * `overtimeCapReachedAt` early-out fires first and OT stays paused until
+   * day rollover regardless.)
    */
   overtimeLockRetries: z.number().int().default(0),
 });
