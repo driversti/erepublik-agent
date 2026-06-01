@@ -27,6 +27,7 @@ export interface OvertimePolicyInput {
   state: {
     workOvertimeDone: boolean;      // true iff completedActions.workOvertime != null
     capReached: boolean;            // true iff overtimeCapReachedAt != null
+    workDoneToday: boolean;         // true iff completedActions.work != null
   };
   settings: {
     enabled: boolean;
@@ -41,6 +42,7 @@ export type OvertimeDecision =
   | { kind: 'skip-already-done' }              // once-per-day + flag set
   | { kind: 'skip-cap' }                       // employer cap was hit today
   | { kind: 'skip-not-employed' }              // overTime block absent
+  | { kind: 'skip-work-not-done' }             // regular daily work not confirmed yet
   | { kind: 'skip-cooldown'; untilSec: number; flagAlreadySet: boolean }
   | { kind: 'skip-points'; have: number; need: 24 }
   | { kind: 'skip-energy'; have: number; need: 10 }
@@ -72,6 +74,11 @@ export function decideOvertime(input: OvertimePolicyInput): OvertimeDecision {
   }
 
   if (jobOverTime == null) return { kind: 'skip-not-employed' };
+
+  // Defense-in-depth: never POST overtime before regular daily work is
+  // confirmed done today. Placed after the employed check so an unemployed
+  // citizen still surfaces as `skip-not-employed`.
+  if (!state.workDoneToday) return { kind: 'skip-work-not-done' };
 
   const cooldownActive = jobOverTime.nextOverTime + COOLDOWN_BUFFER_SEC > nowSec;
   if (cooldownActive) {

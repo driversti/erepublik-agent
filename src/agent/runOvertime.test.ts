@@ -63,7 +63,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('reconcile-external: cooldown active + flag unset → mark external, no POST', async () => {
-    const s = emptyState(6755);
+    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: FIXED_NOW_SEC + 600 },
@@ -82,7 +82,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('go: marks completedActions agent and is silent (digest emits the OT line)', async () => {
-    const s = emptyState(6755);
+    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
@@ -112,7 +112,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('go but clean-precondition failure → mark cap + alert', async () => {
-    const s = emptyState(6755);
+    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
@@ -141,6 +141,7 @@ describe('runOvertimeIfEligible', () => {
     const s: DailyState = {
       ...emptyState(6755),
       completedActions: {
+        work: { at: FIXED_NOW.toISOString(), source: 'agent' },
         workOvertime: { at: '2026-05-20T11:00:00Z', source: 'agent' },
       },
     };

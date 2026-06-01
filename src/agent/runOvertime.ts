@@ -63,6 +63,7 @@ export async function runOvertimeIfEligible(
     state: {
       workOvertimeDone: state.completedActions.workOvertime != null,
       capReached: state.overtimeCapReachedAt != null,
+      workDoneToday: state.completedActions.work != null,
     },
     settings: { enabled: settings.workOvertime.enabled, mode: settings.workOvertime.mode },
     nowSec,
@@ -112,6 +113,7 @@ export async function runOvertimeIfEligible(
     case 'skip-already-done':
     case 'skip-cap':
     case 'skip-not-employed':
+    case 'skip-work-not-done':
     case 'skip-cooldown':
     case 'skip-points':
     case 'skip-energy':
