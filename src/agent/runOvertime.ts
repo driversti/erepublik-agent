@@ -6,6 +6,13 @@ import { getJobData, workOvertime, type OvertimePostResult, type JobDataResponse
 import { escapeMdV2 } from '../telegram/mdV2.js';
 
 /**
+ * Consecutive `"lock"` rejections (with no captcha solved) tolerated within a
+ * game day before falling back to pausing OT until day rollover. Keeps a
+ * persistent, unsolvable lock from spamming `workOvertime` POSTs every cycle.
+ */
+export const LOCK_RETRY_LIMIT = 5;
+
+/**
  * Single OT attempt for this cycle. Mutates `state` (sets
  * `completedActions.workOvertime` and/or `overtimeCapReachedAt`) and emits
  * Telegram messages via `opts.notify`. Returns the decision + any POST result
@@ -19,6 +26,12 @@ export interface RunOvertimeOptions {
   notify: (msg: string) => Promise<void>;
   /** Inject for tests. Falls back to `new Date()` in production. */
   now?: () => Date;
+  /**
+   * Re-check (and, if configured, solve) eRepublik's session-unlock captcha.
+   * Invoked only on a `"lock"` rejection. Omitted in callers/tests that don't
+   * exercise the lock path; absence degrades to "treat as unsolved".
+   */
+  recheckCaptcha?: () => Promise<{ present: boolean; solved: boolean }>;
 }
 
 export interface RunOvertimeOutcome {
@@ -27,6 +40,8 @@ export interface RunOvertimeOutcome {
   /** Net pay if success, else null. Pulled up for easier logging. */
   netSalary?: number | null;
   currency?: string | null;
+  /** Populated only on a `"lock"` rejection — lets the runner log a precise tag. */
+  lock?: { captchaSolved: boolean; retries: number; paused: boolean; limit: number };
 }
 
 export async function runOvertimeIfEligible(
@@ -88,12 +103,39 @@ export async function runOvertimeIfEligible(
         // message here would double-notify the operator.
         return { decision, post, netSalary: net, currency: cur };
       }
-      // All client-side preconditions were clean (points, energy, cooldown,
-      // employment all OK per /main/job-data), yet the server still rejected.
-      // We don't actually know it's an employer cap — observed cases include
-      // a literal "lock" message of unclear cause (see kb/Work_Overtime.md).
-      // Pause OT for the day either way (retrying inside the same day burns
-      // requests without changing the outcome and risks tripping flags).
+      // Server rejected even though our local gate (points/energy/cooldown)
+      // was clean. `"lock"` is most likely eRepublik's session-unlock captcha
+      // surfacing on the AJAX response (see the spec + kb/Work_Overtime.md):
+      // re-check/solve it and retry next cycle rather than pausing the whole
+      // day. Other messages stay conservative (pause until rollover).
+      if (post.message === 'lock') {
+        const recheck = opts.recheckCaptcha ?? (async () => ({ present: false, solved: false }));
+        const captcha = await recheck();
+        if (captcha.present && captcha.solved) {
+          state.overtimeLockRetries = 0;
+          return {
+            decision,
+            post,
+            lock: { captchaSolved: true, retries: 0, paused: false, limit: LOCK_RETRY_LIMIT },
+          };
+        }
+        state.overtimeLockRetries += 1;
+        const paused = state.overtimeLockRetries >= LOCK_RETRY_LIMIT;
+        if (paused) {
+          state.overtimeCapReachedAt = nowIso;
+          await opts.notify(
+            escapeMdV2(
+              `⛔ overtime locked — ${state.overtimeLockRetries} consecutive "lock" rejections, paused until day rollover`,
+            ),
+          );
+        }
+        return {
+          decision,
+          post,
+          lock: { captchaSolved: false, retries: state.overtimeLockRetries, paused, limit: LOCK_RETRY_LIMIT },
+        };
+      }
+      // Non-`lock` rejection: cause unknown and stable — pause until rollover.
       state.overtimeCapReachedAt = nowIso;
       await opts.notify(
         escapeMdV2(

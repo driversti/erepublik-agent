@@ -127,4 +127,11 @@ describe('decideOvertime', () => {
       jobOverTime: { points: 0, usableEnergy: 0, nextOverTime: NOW + 9999 },
     }))).toEqual({ kind: 'skip-cap' });
   });
+
+  it('work-first gate wins over reconcile-external (cooldown active + work not done → skip-work-not-done)', () => {
+    expect(decideOvertime(input({
+      jobOverTime: { points: 1000, usableEnergy: 500, nextOverTime: NOW + 100 },
+      state: { workOvertimeDone: false, capReached: false, workDoneToday: false },
+    }))).toEqual({ kind: 'skip-work-not-done' });
+  });
 });

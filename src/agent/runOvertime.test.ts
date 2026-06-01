@@ -18,6 +18,12 @@ const FIXED_NOW = new Date('2026-05-20T12:00:00.000Z');
 const FIXED_NOW_SEC = Math.floor(FIXED_NOW.getTime() / 1000);
 const fixedNow = () => FIXED_NOW;
 
+function stateWithWork(day: number): DailyState {
+  const s = emptyState(day);
+  s.completedActions.work = { at: '2026-05-20T09:00:00Z', source: 'agent' };
+  return s;
+}
+
 function settings(overrides: Partial<Settings['workOvertime']> = {}): Settings {
   // Only the `workOvertime` block matters here; the orchestrator never reads
   // anything else, so we cast a minimal stub through unknown.
@@ -63,7 +69,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('reconcile-external: cooldown active + flag unset → mark external, no POST', async () => {
-    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
+    const s = stateWithWork(6755);
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: FIXED_NOW_SEC + 600 },
@@ -82,7 +88,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('go: marks completedActions agent and is silent (digest emits the OT line)', async () => {
-    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
+    const s = stateWithWork(6755);
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
@@ -112,7 +118,7 @@ describe('runOvertimeIfEligible', () => {
   });
 
   it('go but clean-precondition failure → mark cap + alert', async () => {
-    const s: DailyState = { ...emptyState(6755), completedActions: { work: { at: FIXED_NOW.toISOString(), source: 'agent' } } };
+    const s = stateWithWork(6755);
     getJobData.mockResolvedValue({
       isEmployee: true,
       overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
@@ -135,6 +141,85 @@ describe('runOvertimeIfEligible', () => {
     expect(cap.calls).toEqual([
       '⛔ overtime rejected by server \\(msg\\="something else the server returned"\\) — paused until day rollover',
     ]);
+  });
+
+  it('lock + captcha present & solved → no cap, resets retry counter, no pause alert', async () => {
+    const s = stateWithWork(6755);
+    s.overtimeLockRetries = 2;
+    getJobData.mockResolvedValue({
+      isEmployee: true,
+      overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
+    });
+    workOvertime.mockResolvedValue({ success: false, httpStatus: 200, message: 'lock', result: null });
+    const cap = notifyCaptor();
+    const recheckCaptcha = vi.fn().mockResolvedValue({ present: true, solved: true });
+    const out = await runOvertimeIfEligible(
+      {} as any, 'csrf', s, settings(), { notify: cap.notify, now: fixedNow, recheckCaptcha },
+    );
+    expect(out.decision).toEqual({ kind: 'go' });
+    expect(recheckCaptcha).toHaveBeenCalledOnce();
+    expect(s.overtimeCapReachedAt).toBeNull();
+    expect(s.overtimeLockRetries).toBe(0);
+    expect(out.lock).toEqual({ captchaSolved: true, retries: 0, paused: false, limit: 5 });
+    expect(cap.calls).toEqual([]);
+  });
+
+  it('lock + no captcha → increments retry counter, no pause below limit', async () => {
+    const s = stateWithWork(6755);
+    s.overtimeLockRetries = 0;
+    getJobData.mockResolvedValue({
+      isEmployee: true,
+      overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
+    });
+    workOvertime.mockResolvedValue({ success: false, httpStatus: 200, message: 'lock', result: null });
+    const cap = notifyCaptor();
+    const recheckCaptcha = vi.fn().mockResolvedValue({ present: false, solved: false });
+    const out = await runOvertimeIfEligible(
+      {} as any, 'csrf', s, settings(), { notify: cap.notify, now: fixedNow, recheckCaptcha },
+    );
+    expect(out.decision).toEqual({ kind: 'go' });
+    expect(s.overtimeLockRetries).toBe(1);
+    expect(s.overtimeCapReachedAt).toBeNull();
+    expect(out.lock).toEqual({ captchaSolved: false, retries: 1, paused: false, limit: 5 });
+    expect(cap.calls).toEqual([]);
+  });
+
+  it('lock + counter reaches limit (5) → set cap + one pause alert', async () => {
+    const s = stateWithWork(6755);
+    s.overtimeLockRetries = 4; // this lock pushes it to 5
+    getJobData.mockResolvedValue({
+      isEmployee: true,
+      overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
+    });
+    workOvertime.mockResolvedValue({ success: false, httpStatus: 200, message: 'lock', result: null });
+    const cap = notifyCaptor();
+    const recheckCaptcha = vi.fn().mockResolvedValue({ present: false, solved: false });
+    const out = await runOvertimeIfEligible(
+      {} as any, 'csrf', s, settings(), { notify: cap.notify, now: fixedNow, recheckCaptcha },
+    );
+    expect(s.overtimeLockRetries).toBe(5);
+    expect(s.overtimeCapReachedAt).toBe(FIXED_NOW.toISOString());
+    expect(out.lock).toEqual({ captchaSolved: false, retries: 5, paused: true, limit: 5 });
+    expect(cap.calls).toEqual([
+      '⛔ overtime locked — 5 consecutive "lock" rejections, paused until day rollover',
+    ]);
+  });
+
+  it('lock with recheckCaptcha omitted: defaults to unsolved (counter climbs, no pause below limit)', async () => {
+    const s = stateWithWork(6755);
+    s.overtimeLockRetries = 0;
+    getJobData.mockResolvedValue({
+      isEmployee: true,
+      overTime: { points: 1000, usableEnergy: 500, nextOverTime: 0 },
+    });
+    workOvertime.mockResolvedValue({ success: false, httpStatus: 200, message: 'lock', result: null });
+    const cap = notifyCaptor();
+    const out = await runOvertimeIfEligible(
+      {} as any, 'csrf', s, settings(), { notify: cap.notify, now: fixedNow },
+    );
+    expect(s.overtimeLockRetries).toBe(1);
+    expect(s.overtimeCapReachedAt).toBeNull();
+    expect(out.lock).toEqual({ captchaSolved: false, retries: 1, paused: false, limit: 5 });
   });
 
   it('skip-cooldown when flag already set (does not double-reconcile)', async () => {
