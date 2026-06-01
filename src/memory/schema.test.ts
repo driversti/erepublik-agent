@@ -38,6 +38,24 @@ describe('DailyState schema', () => {
     };
     expect(DailyState.parse(legacy).overtimeCapReachedAt).toBeNull();
   });
+
+  it('emptyState seeds overtimeLockRetries to 0', () => {
+    expect(emptyState(6755).overtimeLockRetries).toBe(0);
+  });
+
+  it('accepts legacy state files without overtimeLockRetries (defaults to 0)', () => {
+    const legacy = {
+      eRepublikDay: 6755,
+      completedActions: {},
+      claimedMissionIds: [],
+      claimedChestThresholds: [],
+      notifiedNoJobToday: false,
+      lastDigestHash: null,
+      awaySince: null,
+      overtimeCapReachedAt: null,
+    };
+    expect(DailyState.parse(legacy).overtimeLockRetries).toBe(0);
+  });
 });
 
 describe('overtimeStillPending', () => {

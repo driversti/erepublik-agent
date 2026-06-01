@@ -24,6 +24,7 @@ describe('StateProviders shape', () => {
           lastDigestHash: null,
           awaySince: null,
           overtimeCapReachedAt: null,
+          overtimeLockRetries: 0,
         },
         rolledOver: false,
       }),

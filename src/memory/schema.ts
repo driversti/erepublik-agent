@@ -42,6 +42,14 @@ export const DailyState = z.object({
    * created).
    */
   overtimeCapReachedAt: z.string().nullable().default(null),
+  /**
+   * Count of consecutive `workOvertime` POSTs that returned
+   * `{status:false, message:"lock"}` this game day where a session-unlock
+   * captcha was NOT found-and-solved. Reset to 0 when a captcha is solved.
+   * Once it reaches `LOCK_RETRY_LIMIT` (see runOvertime.ts) the orchestrator
+   * sets `overtimeCapReachedAt` (pause until rollover). Fresh on day rollover.
+   */
+  overtimeLockRetries: z.number().int().default(0),
 });
 
 export type DailyState = z.infer<typeof DailyState>;
@@ -56,6 +64,7 @@ export function emptyState(day: number): DailyState {
     lastDigestHash: null,
     awaySince: null,
     overtimeCapReachedAt: null,
+    overtimeLockRetries: 0,
   };
 }
 

@@ -17,6 +17,7 @@ function emptyDaily(): DailyState {
     lastDigestHash: null,
     awaySince: null,
     overtimeCapReachedAt: null,
+    overtimeLockRetries: 0,
   };
 }
 
