@@ -362,7 +362,7 @@ async function runCycle(
             });
           } else if (ot.lock) {
             tag = ot.lock.captchaSolved
-              ? '⛔ lock — captcha solved, will retry'
+              ? '🔓 lock — captcha solved, retrying next cycle'
               : ot.lock.paused
                 ? `⛔ lock — retry limit hit (${ot.lock.retries}/${ot.lock.limit}), paused until rollover`
                 : `⛔ lock — no captcha solved, retry ${ot.lock.retries}/${ot.lock.limit}`;
