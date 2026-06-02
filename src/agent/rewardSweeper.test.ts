@@ -18,6 +18,7 @@ function emptyDaily(): DailyState {
     awaySince: null,
     overtimeCapReachedAt: null,
     overtimeLockRetries: 0,
+    storageFullNotifiedAt: null,
   };
 }
 

@@ -28,6 +28,23 @@ export async function getCheapestFood(
   countryId: number,
   quality = 1,
 ): Promise<MarketOffer | null> {
+  const { offer } = await fetchFoodMarket(ctx, csrf, countryId, quality);
+  return offer;
+}
+
+/**
+ * Raw food-market query. Returns the cheapest offer plus the server's `can_buy`
+ * flag for the queried market — the authoritative "am I allowed to buy here?"
+ * signal. We also surface the offer's own `country_id` so callers can detect the
+ * case where `marketplaceAjax` returns offers from a market other than the one
+ * we asked for (which then fail the buy with "national or local market").
+ */
+export async function fetchFoodMarket(
+  ctx: BrowserContext,
+  csrf: string,
+  countryId: number,
+  quality = 1,
+): Promise<{ offer: MarketOffer | null; canBuy: boolean | undefined }> {
   const { body } = await apiCall<MarketAjaxResp>(ctx, {
     method: 'POST',
     path: '/en/economy/marketplaceAjax',
@@ -42,7 +59,7 @@ export async function getCheapestFood(
     },
   });
   const offers = body.offers ?? [];
-  return offers.length > 0 ? offers[0] : null;
+  return { offer: offers.length > 0 ? offers[0] : null, canBuy: body.can_buy };
 }
 
 interface MarketActionsResp {
@@ -127,7 +144,14 @@ export async function buyOneCheapestFood(
 
   const reasons: string[] = [];
   for (const countryId of candidates) {
-    const offer = await getCheapestFood(ctx, csrf, countryId);
+    const { offer, canBuy } = await fetchFoodMarket(ctx, csrf, countryId);
+    // `can_buy` is the server's authoritative "are you allowed to buy in this
+    // market?" flag (mirrors ePlus' buyGoods plugin). Skip a market it says no
+    // to instead of firing a doomed buy that returns "national or local market".
+    if (canBuy === false) {
+      reasons.push(`${countryId}: not_buyable (can_buy=false)`);
+      continue;
+    }
     if (!offer) {
       reasons.push(`${countryId}: no_offers`);
       continue;
@@ -138,7 +162,7 @@ export async function buyOneCheapestFood(
     }
     const r = await buyFromOffer(ctx, csrf, offer.id, 1);
     if (r.success) return { ...r, price: offer.priceWithTaxes, marketCountryId: countryId };
-    reasons.push(`${countryId}: ${r.reason ?? 'buy_failed'}`);
+    reasons.push(`${countryId}: ${r.reason ?? 'buy_failed'} (offerCountry=${offer.country_id})`);
   }
 
   return { success: false, reason: reasons.join('; ') };

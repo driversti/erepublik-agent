@@ -53,6 +53,13 @@ export const DailyState = z.object({
    * day rollover regardless.)
    */
   overtimeLockRetries: z.number().int().default(0),
+  /**
+   * ISO timestamp set when we skipped the daily food buy because main storage
+   * was full. Gates the Telegram alert to once per game day (the file is fresh
+   * each day, so the flag resets on rollover). The buy itself is NOT marked
+   * done — it stays pending so it succeeds automatically once space is freed.
+   */
+  storageFullNotifiedAt: z.string().nullable().default(null),
 });
 
 export type DailyState = z.infer<typeof DailyState>;
@@ -68,6 +75,7 @@ export function emptyState(day: number): DailyState {
     awaySince: null,
     overtimeCapReachedAt: null,
     overtimeLockRetries: 0,
+    storageFullNotifiedAt: null,
   };
 }
 

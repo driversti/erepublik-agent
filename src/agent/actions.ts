@@ -3,6 +3,7 @@ import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
+import { getStorageStatus } from '../tools/storage.js';
 import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
 import type { CycleEvent } from './cycleEvents.js';
@@ -69,6 +70,26 @@ export async function runAction(
     return r.success ? { kind: 'vipClaim' } : null;
   }
   if (action === 'buyFood') {
+    // Pre-check storage like ePlus' buyGoods plugin: a full main storage makes
+    // the buy impossible ("Your storage is full"), so skip the doomed POST and
+    // alert once per game day. `storageFullNotifiedAt` resets on day rollover
+    // (fresh DailyState), giving the once/day gate for free. The buy is left
+    // pending (no completion flag) so it succeeds automatically once freed.
+    const storage = await getStorageStatus(ctx, csrf);
+    if (storage && storage.availableStorage <= 0) {
+      const usage = storage.storagePercentage ?? `${storage.usedStorage}/${storage.totalStorage}`;
+      console.log(`[cycle] buyFood: ⏭  storage_full (${usage})`);
+      if (state.storageFullNotifiedAt == null) {
+        state.storageFullNotifiedAt = at;
+        await opts.notify(
+          escapeMdV2(
+            `📦 Storage full (${usage}) — can't buy the daily food. Free up space or increase capacity.`,
+          ),
+        );
+      }
+      return null;
+    }
+
     const r = await buyOneCheapestFood(ctx, csrf, opts.foodMarketCountryIds, opts.maxFoodPrice);
     if (r.success && r.offerId != null) {
       state.completedActions.buyFood = { at, source: 'agent', offerId: r.offerId };
