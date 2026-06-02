@@ -11,6 +11,12 @@ import { escapeMdV2 } from '../telegram/mdV2.js';
 export interface RunActionOptions {
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
   maxFoodPrice: number;
+  /**
+   * Markets to try for the daily food buy, in preference order — normally
+   * `[currentLocationCountry, citizenshipCountry]`. eRepublik only allows buying
+   * from the country you are in or your national market, so we can't hardcode it.
+   */
+  foodMarketCountryIds: Array<number | null | undefined>;
   /** Configured gold amount (1..10). Runner pre-filter ensures we never reach this branch with 0. */
   buyGoldAmount: number;
   /** Async notifier (Telegram). Pass a no-op when chat isn't configured. */
@@ -37,7 +43,6 @@ export async function runAction(
   action: ActiveSafeDailyKey,
   ctx: BrowserContext,
   csrf: string,
-  countryId: number,
   state: DailyState,
   opts: RunActionOptions,
 ): Promise<CycleEvent | null> {
@@ -64,7 +69,7 @@ export async function runAction(
     return r.success ? { kind: 'vipClaim' } : null;
   }
   if (action === 'buyFood') {
-    const r = await buyOneCheapestFood(ctx, csrf, countryId, opts.maxFoodPrice);
+    const r = await buyOneCheapestFood(ctx, csrf, opts.foodMarketCountryIds, opts.maxFoodPrice);
     if (r.success && r.offerId != null) {
       state.completedActions.buyFood = { at, source: 'agent', offerId: r.offerId };
     }

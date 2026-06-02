@@ -103,25 +103,43 @@ export async function buyFromOffer(
   };
 }
 
-/** Composite: find cheapest Q1 food in the given country and buy 1 unit. */
+/**
+ * Composite: find the cheapest Q1 food across the accessible markets and buy 1 unit.
+ *
+ * eRepublik only lets you buy from the market of the country you are physically
+ * in OR from your national (citizenship) market — buying anywhere else returns
+ * `"You can only buy products from your national or local market."`. So we try
+ * each candidate market in the given preference order (caller passes
+ * `[currentLocationCountry, citizenshipCountry]`), buying from the first one
+ * that has an offer within the ceiling. Per-market failures are aggregated into
+ * `reason` so the cycle log says exactly which market failed and why.
+ */
 export async function buyOneCheapestFood(
   ctx: BrowserContext,
   csrf: string,
-  countryId: number,
+  marketCountryIds: Array<number | null | undefined>,
   maxPriceWithTaxes: number,
-): Promise<BuyResult & { price?: number }> {
-  const offer = await getCheapestFood(ctx, csrf, countryId);
-  if (!offer) return { success: false, reason: 'no_offers_available' };
+): Promise<BuyResult & { price?: number; marketCountryId?: number }> {
+  const candidates = [
+    ...new Set(marketCountryIds.filter((c): c is number => typeof c === 'number')),
+  ];
+  if (candidates.length === 0) return { success: false, reason: 'no_market_country' };
 
-  if (offer.priceWithTaxes > maxPriceWithTaxes) {
-    return {
-      success: false,
-      offerId: offer.id,
-      price: offer.priceWithTaxes,
-      reason: `price_above_ceiling: ${offer.priceWithTaxes} > max ${maxPriceWithTaxes}`,
-    };
+  const reasons: string[] = [];
+  for (const countryId of candidates) {
+    const offer = await getCheapestFood(ctx, csrf, countryId);
+    if (!offer) {
+      reasons.push(`${countryId}: no_offers`);
+      continue;
+    }
+    if (offer.priceWithTaxes > maxPriceWithTaxes) {
+      reasons.push(`${countryId}: price_above_ceiling ${offer.priceWithTaxes} > ${maxPriceWithTaxes}`);
+      continue;
+    }
+    const r = await buyFromOffer(ctx, csrf, offer.id, 1);
+    if (r.success) return { ...r, price: offer.priceWithTaxes, marketCountryId: countryId };
+    reasons.push(`${countryId}: ${r.reason ?? 'buy_failed'}`);
   }
 
-  const r = await buyFromOffer(ctx, csrf, offer.id, 1);
-  return { ...r, price: offer.priceWithTaxes };
+  return { success: false, reason: reasons.join('; ') };
 }

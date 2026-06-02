@@ -23,6 +23,7 @@ function notifyCaptor() {
 
 const baseOpts = (extra: Partial<{ buyGoldAmount: number }> = {}) => ({
   maxFoodPrice: 100,
+  foodMarketCountryIds: [84],
   buyGoldAmount: 10,
   notify: notifyCaptor().notify,
   ...extra,
@@ -34,7 +35,7 @@ describe('runAction("buyGold", …)', () => {
   it('success → flag with source: "agent", offerId, amount', async () => {
     const state = emptyState(6757);
     buyOneGoldFromMarket.mockResolvedValue({ success: true, offerId: 555, amount: 10, status: 200 });
-    await runAction('buyGold', {} as any, 'csrf', 84, state, baseOpts());
+    await runAction('buyGold', {} as any, 'csrf', state, baseOpts());
     expect(state.completedActions.buyGold).toMatchObject({
       source: 'agent',
       offerId: 555,
@@ -48,7 +49,7 @@ describe('runAction("buyGold", …)', () => {
     buyOneGoldFromMarket.mockResolvedValue({
       success: true, alreadyDone: true, offerId: 555, amount: 10, status: 200,
     });
-    await runAction('buyGold', {} as any, 'csrf', 84, state, baseOpts());
+    await runAction('buyGold', {} as any, 'csrf', state, baseOpts());
     expect(state.completedActions.buyGold?.source).toBe('external');
   });
 
@@ -58,7 +59,7 @@ describe('runAction("buyGold", …)', () => {
     // Reason contains chars reserved in MarkdownV2 (_, >, =) to guard against
     // regressions of the Telegram HTTP 400 we hit on `no_offer_with_amount_>=_1`.
     buyOneGoldFromMarket.mockResolvedValue({ success: false, reason: 'no_offer_with_amount_>=_1' });
-    await runAction('buyGold', {} as any, 'csrf', 84, state, { ...baseOpts(), notify: cap.notify });
+    await runAction('buyGold', {} as any, 'csrf', state, { ...baseOpts(), notify: cap.notify });
     expect(state.completedActions.buyGold).toBeUndefined();
     expect(cap.calls).toEqual([
       '⚠️ buy gold failed — no\\_offer\\_with\\_amount\\_\\>\\=\\_1',
@@ -69,7 +70,7 @@ describe('runAction("buyGold", …)', () => {
     const state = emptyState(6757);
     const cap = notifyCaptor();
     buyOneGoldFromMarket.mockResolvedValue({ success: true, alreadyDone: true, offerId: 1, amount: 10 });
-    await runAction('buyGold', {} as any, 'csrf', 84, state, { ...baseOpts(), notify: cap.notify });
+    await runAction('buyGold', {} as any, 'csrf', state, { ...baseOpts(), notify: cap.notify });
     expect(cap.calls).toEqual([]);
   });
 });

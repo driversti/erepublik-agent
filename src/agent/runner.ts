@@ -284,15 +284,17 @@ async function runCycle(
       //    model the loop relies on.
       const runActionOpts = {
         maxFoodPrice: env.ERP_MAX_FOOD_PRICE,
+        // Food can only be bought from the market of the country we're currently
+        // in or our national (citizenship) market — try the local one first,
+        // then fall back to national. See `kb/Employment_Country.md` (same rule).
+        foodMarketCountryIds: [ctxInfo.currentCountryId, countryId],
         buyGoldAmount: settings.buyGold.amount,
         notify: (m: string) => notifier.send(m),
       };
       async function tryAction(action: import('../memory/schema.js').ActiveSafeDailyKey) {
         if (!pending.includes(action)) return;
         try {
-          // countryId is guaranteed non-null here: the null-guard above throws
-          // before we reach this point, but TS can't narrow across async closures.
-          const evt = await runAction(action, ctx, csrf, countryId!, state, runActionOpts);
+          const evt = await runAction(action, ctx, csrf, state, runActionOpts);
           if (evt) events.push(evt);
         } catch (err) {
           const msg = `[cycle] ${action} threw: ${(err as Error).message}`;
