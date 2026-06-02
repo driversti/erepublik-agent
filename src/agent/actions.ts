@@ -3,6 +3,7 @@ import { work } from '../tools/work.js';
 import { train } from '../tools/train.js';
 import { claimVip } from '../tools/vip.js';
 import { buyOneCheapestFood } from '../tools/market.js';
+import { getStorageStatus } from '../tools/storage.js';
 import { buyOneGoldFromMarket } from '../tools/buyGold.js';
 import type { ActiveSafeDailyKey, DailyState } from '../memory/schema.js';
 import type { CycleEvent } from './cycleEvents.js';
@@ -11,6 +12,12 @@ import { escapeMdV2 } from '../telegram/mdV2.js';
 export interface RunActionOptions {
   /** Hard ceiling for `buyOneCheapestFood` — refuses any offer above this. */
   maxFoodPrice: number;
+  /**
+   * Markets to try for the daily food buy, in preference order — normally
+   * `[currentLocationCountry, citizenshipCountry]`. eRepublik only allows buying
+   * from the country you are in or your national market, so we can't hardcode it.
+   */
+  foodMarketCountryIds: Array<number | null | undefined>;
   /** Configured gold amount (1..10). Runner pre-filter ensures we never reach this branch with 0. */
   buyGoldAmount: number;
   /** Async notifier (Telegram). Pass a no-op when chat isn't configured. */
@@ -37,7 +44,6 @@ export async function runAction(
   action: ActiveSafeDailyKey,
   ctx: BrowserContext,
   csrf: string,
-  countryId: number,
   state: DailyState,
   opts: RunActionOptions,
 ): Promise<CycleEvent | null> {
@@ -64,7 +70,27 @@ export async function runAction(
     return r.success ? { kind: 'vipClaim' } : null;
   }
   if (action === 'buyFood') {
-    const r = await buyOneCheapestFood(ctx, csrf, countryId, opts.maxFoodPrice);
+    // Pre-check storage like ePlus' buyGoods plugin: a full main storage makes
+    // the buy impossible ("Your storage is full"), so skip the doomed POST and
+    // alert once per game day. `storageFullNotifiedAt` resets on day rollover
+    // (fresh DailyState), giving the once/day gate for free. The buy is left
+    // pending (no completion flag) so it succeeds automatically once freed.
+    const storage = await getStorageStatus(ctx, csrf);
+    if (storage && storage.availableStorage <= 0) {
+      const usage = storage.storagePercentage ?? `${storage.usedStorage}/${storage.totalStorage}`;
+      console.log(`[cycle] buyFood: ⏭  storage_full (${usage})`);
+      if (state.storageFullNotifiedAt == null) {
+        state.storageFullNotifiedAt = at;
+        await opts.notify(
+          escapeMdV2(
+            `📦 Storage full (${usage}) — can't buy the daily food. Free up space or increase capacity.`,
+          ),
+        );
+      }
+      return null;
+    }
+
+    const r = await buyOneCheapestFood(ctx, csrf, opts.foodMarketCountryIds, opts.maxFoodPrice);
     if (r.success && r.offerId != null) {
       state.completedActions.buyFood = { at, source: 'agent', offerId: r.offerId };
     }
