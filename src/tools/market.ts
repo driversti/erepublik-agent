@@ -85,10 +85,19 @@ export async function buyFromOffer(
     },
   });
 
+  const success = status === 200 && body.error !== true;
+  // Surface eRepublik's own failure text (e.g. "You don't have enough money",
+  // "Insufficient stock available") so the cycle log/digest says *why* the buy
+  // failed instead of a bare "failed". Falls back to the HTTP status otherwise.
+  const reason = success
+    ? undefined
+    : (body.message ?? `http_${status}`);
+
   return {
-    success: status === 200 && body.error !== true,
+    success,
     offerId,
     amount,
+    reason,
     status,
     body,
   };
