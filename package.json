@@ -29,7 +29,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "cloakbrowser": "^0.3.31",
+    "cloakbrowser": "^0.4.7",
     "dotenv": "^16.4.5",
     "electron-updater": "^6.8.3",
     "playwright-core": "^1.49.0",
